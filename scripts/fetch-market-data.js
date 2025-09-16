@@ -270,4 +270,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     });
 }
 
-module.exports = { fetchMarketData };
+export { fetchMarketData };
