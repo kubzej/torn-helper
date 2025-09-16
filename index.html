@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Torn Helper by kubzej</title>
+    <link rel="stylesheet" href="/src/styles/main.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="app">
+        <div class="container">
+            <header class="header">
+                <h1 class="title">
+                    <span class="title-main">Torn Helper</span>
+                    <span class="title-author">by kubzej</span>
+                </h1>
+                <p class="subtitle">Your ultimate companion for Torn City analysis and utilities</p>
+            </header>
+
+            <main class="main">
+                <div class="api-key-section" id="apiKeySection">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2>🔑 API Key Setup</h2>
+                            <p>Enter your Torn API key to get started</p>
+                        </div>
+                        <div class="card-body">
+                            <div class="input-group">
+                                <input 
+                                    type="password" 
+                                    id="apiKeyInput" 
+                                    placeholder="Enter your Torn API key..."
+                                    class="input"
+                                    autocomplete="current-password"
+                                >
+                                <button id="confirmApiKey" class="btn btn-primary">
+                                    <span>Confirm</span>
+                                    <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                        <path d="M5 12l5 5L20 7"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            <div class="help-text">
+                                <p>Get your API key from <a href="https://www.torn.com/preferences.php#tab=api" target="_blank" rel="noopener">Torn Preferences → API</a></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dashboard hidden" id="dashboard">
+                    <div class="dashboard-header">
+                        <h2>Choose a Helper Tool</h2>
+                        <div class="user-info">
+                            <span>API Key: ****••••</span>
+                            <button id="changeApiKey" class="btn btn-secondary btn-sm">Change</button>
+                        </div>
+                    </div>
+                    
+                    <div class="use-cases-grid" id="useCasesGrid">
+                        <!-- Use cases will be dynamically loaded here -->
+                    </div>
+                </div>
+            </main>
+
+            <footer class="footer">
+                <p>&copy; 2025 kubzej - Open source Torn helper tools</p>
+            </footer>
+        </div>
+    </div>
+
+    <div id="loadingOverlay" class="loading-overlay hidden">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p class="loading-text">Validating API key...</p>
+        </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

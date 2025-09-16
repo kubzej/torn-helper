@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profit Analyzer - Torn Helper</title>
+    <link rel="stylesheet" href="/src/styles/main.css">
+    <link rel="stylesheet" href="/src/styles/analyzer.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="app">
+        <div class="container">
+            <header class="header">
+                <nav class="nav">
+                    <a href="/" class="nav-back">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M19 12H5"/>
+                            <path d="M12 19l-7-7 7-7"/>
+                        </svg>
+                        Back to Dashboard
+                    </a>
+                    <h1 class="page-title">💰 Profit Analyzer</h1>
+                </nav>
+            </header>
+
+            <main class="main">
+                <div class="analyzer-controls">
+                    <div class="control-group">
+                        <button id="analyzeBtn" class="btn btn-primary">
+                            <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                                <polyline points="22,6 12,13 2,6"/>
+                            </svg>
+                            Start Analysis
+                        </button>
+                    </div>
+                </div>
+
+                <div class="progress-section hidden" id="progressSection">
+                    <div class="progress-card">
+                        <h3>Analyzing Items...</h3>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                        <p class="progress-text" id="progressText">Preparing analysis...</p>
+                    </div>
+                </div>
+
+                <div class="results-section hidden" id="resultsSection">
+                    <div class="results-header">
+                        <h2>Analysis Results</h2>
+                        <div class="results-summary" id="resultsSummary">
+                            <!-- Summary will be populated here -->
+                        </div>
+                    </div>
+                    
+                    <div class="results-table-container">
+                        <table class="results-table" id="resultsTable">
+                            <thead>
+                                <tr>
+                                    <th data-sort="name" class="sortable">
+                                        Item Name
+                                        <span class="sort-indicator"></span>
+                                    </th>
+                                    <th data-sort="shopPrice" class="sortable">
+                                        Shop Price
+                                        <span class="sort-indicator"></span>
+                                    </th>
+                                    <th data-sort="bazaarPrice" class="sortable">
+                                        Max Bazaar
+                                        <span class="sort-indicator"></span>
+                                    </th>
+                                    <th data-sort="profit" class="sortable">
+                                        Profit/Item
+                                        <span class="sort-indicator"></span>
+                                    </th>
+                                    <th data-sort="profitMargin" class="sortable">
+                                        Margin
+                                        <span class="sort-indicator"></span>
+                                    </th>
+                                    <th data-sort="profitPer100" class="sortable">
+                                        Profit/100
+                                        <span class="sort-indicator"></span>
+                                    </th>
+                                    <th data-sort="maxStock" class="sortable">
+                                        Stock
+                                        <span class="sort-indicator"></span>
+                                    </th>
+                                    <th data-sort="status" class="sortable">
+                                        Status
+                                        <span class="sort-indicator"></span>
+                                    </th>
+                                    <th data-sort="shopName" class="sortable">
+                                        Shop
+                                        <span class="sort-indicator"></span>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody id="resultsTableBody">
+                                <!-- Results will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="results-actions">
+                        <button id="exportBtn" class="btn btn-secondary">
+                            <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7,10 12,15 17,10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            Export Results
+                        </button>
+                    </div>
+                </div>
+
+                <div class="empty-state" id="emptyState">
+                    <div class="empty-state-content">
+                        <div class="empty-state-icon">📊</div>
+                        <h3>Ready to Analyze</h3>
+                        <p>Click "Start Analysis" to compare city shop prices with bazaar prices and find profitable trading opportunities.</p>
+                        <div class="empty-state-features">
+                            <ul>
+                                <li>✅ Compare all tradeable items</li>
+                                <li>✅ Real-time bazaar prices</li>
+                                <li>✅ Profit margin calculations</li>
+                                <li>✅ Export results</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script type="module" src="/src/analyzer.ts"></script>
+</body>
+</html>
