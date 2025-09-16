@@ -24,7 +24,7 @@ class TornAPI {
   }
 
   async getCityShops() {
-    return await this.makeRequest('/city?selections=shops');
+    return await this.makeRequest('/torn?selections=cityshops');
   }
 
   async getItems() {
@@ -34,7 +34,7 @@ class TornAPI {
 
 class TornExchangeAPI {
   constructor() {
-    this.baseUrl = 'https://api.tornexchange.com';
+    this.baseUrl = 'https://tornexchange.com/api';
     this.requestCount = 0;
     this.requestWindow = 60000; // 1 minute in milliseconds
     this.maxRequests = 10; // Maximum 10 requests per minute
@@ -117,10 +117,18 @@ class TornExchangeAPI {
 
   async getHighestPrice(itemId) {
     try {
+      // Use the same endpoint structure as the working TypeScript API
       const data = await this.makeRequest(
-        `/api/v1/bazaar/${itemId}/highest-price`
+        `/listings?item_id=${itemId}&sort_by=price&order=desc&page=1`
       );
-      return data?.highest_price || null;
+
+      if (!data.data?.listings || data.data.listings.length === 0) {
+        return null;
+      }
+
+      // First listing has the highest price since we sorted by price descending
+      const highestListing = data.data.listings[0];
+      return highestListing.price;
     } catch (error) {
       console.warn(
         `Failed to get highest price for item ${itemId}:`,
@@ -164,6 +172,31 @@ async function fetchMarketData() {
   const cityShops = await tornAPI.getCityShops();
   const items = await tornAPI.getItems();
 
+  console.log(
+    `Fetched data for ${Object.keys(items.items || {}).length} items`
+  );
+
+  // Debug: Check a few items to see their structure
+  const itemKeys = Object.keys(items.items || {}).slice(0, 5);
+  for (const itemId of itemKeys) {
+    const item = items.items[itemId];
+    console.log(`Item ${itemId} (${item.name}):`);
+    console.log(`  - tradeable: ${item.tradeable}`);
+    console.log(`  - circulation: ${item.circulation}`);
+    console.log(`  - market_value: ${item.market_value}`);
+    console.log(`  - type: ${item.type}`);
+    console.log(`  - buy_price: ${item.buy_price}`);
+    console.log(`  - sell_price: ${item.sell_price}`);
+  }
+
+  // Try an alternative approach - look for items that are commonly tradeable
+  console.log('\nAnalyzing item types...');
+  const itemTypes = {};
+  for (const item of Object.values(items.items || {})) {
+    itemTypes[item.type] = (itemTypes[item.type] || 0) + 1;
+  }
+  console.log('Item type distribution:', itemTypes);
+
   const shopData = {
     lastUpdated: new Date().toISOString(),
     shops: {},
@@ -172,7 +205,7 @@ async function fetchMarketData() {
 
   // Process each shop
   console.log('Processing shop inventories...');
-  for (const [shopId, shop] of Object.entries(cityShops.shops || {})) {
+  for (const [shopId, shop] of Object.entries(cityShops.cityshops || {})) {
     shopData.shops[shopId] = {
       name: shop.name,
       inventory: shop.inventory,
@@ -184,10 +217,29 @@ async function fetchMarketData() {
           const itemData = items.items?.[itemId];
 
           if (!shopData.items[itemId]) {
+            // Determine if item is tradeable using multiple criteria
+            let isTradeableItem = false;
+
+            if (itemData) {
+              isTradeableItem =
+                itemData.tradeable === true ||
+                itemData.circulation > 0 ||
+                (itemData.market_value > 0 && itemData.sell_price > 0) ||
+                // Include common tradeable item types
+                [
+                  'Drug',
+                  'Candy',
+                  'Energy Drink',
+                  'Alcohol',
+                  'Medical',
+                  'Booster',
+                ].includes(itemData.type);
+            }
+
             shopData.items[itemId] = {
               name: item.name,
               type: itemData ? itemData.type : 'Unknown',
-              tradeable: itemData ? itemData.tradeable : false,
+              tradeable: isTradeableItem,
               shops: [],
             };
           }
@@ -208,14 +260,54 @@ async function fetchMarketData() {
     itemData.shops.sort((a, b) => a.price - b.price);
   }
 
+  console.log(
+    `Total items in shop data: ${Object.keys(shopData.items).length}`
+  );
+
+  // Debug: Check how many items are marked as tradeable
+  const allItems = Object.values(shopData.items);
+  const tradeableCount = allItems.filter((item) => item.tradeable).length;
+  console.log(`Items marked as tradeable: ${tradeableCount}`);
+
+  // Debug: Show a few examples
+  const tradeableExamples = allItems
+    .filter((item) => item.tradeable)
+    .slice(0, 3);
+  const nonTradeableExamples = allItems
+    .filter((item) => !item.tradeable)
+    .slice(0, 3);
+
+  if (tradeableExamples.length > 0) {
+    console.log(
+      'Examples of tradeable items:',
+      tradeableExamples.map((i) => `${i.name} (tradeable: ${i.tradeable})`)
+    );
+  }
+
+  if (nonTradeableExamples.length > 0) {
+    console.log(
+      'Examples of non-tradeable items:',
+      nonTradeableExamples.map((i) => `${i.name} (tradeable: ${i.tradeable})`)
+    );
+  }
+
   console.log('Calculating profit analysis...');
 
   // Get tradeable items and analyze profits
-  const tradeableItems = Object.entries(shopData.items)
+  let tradeableItems = Object.entries(shopData.items)
     .filter(([, item]) => item.tradeable)
     .map(([itemId, item]) => ({ itemId, ...item }));
 
   console.log(`Found ${tradeableItems.length} tradeable items`);
+
+  // If no tradeable items found, try with all items as fallback
+  if (tradeableItems.length === 0) {
+    console.log('No tradeable items found, analyzing all items as fallback...');
+    tradeableItems = Object.entries(shopData.items)
+      .slice(0, 50) // Limit to first 50 items to avoid hitting rate limits
+      .map(([itemId, item]) => ({ itemId, ...item }));
+    console.log(`Using ${tradeableItems.length} items for analysis`);
+  }
 
   const results = [];
   let processed = 0;

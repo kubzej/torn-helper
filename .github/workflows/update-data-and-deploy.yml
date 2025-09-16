@@ -40,12 +40,6 @@ jobs:
           git add public/data/
           git diff --staged --quiet || git commit -m "Update market data - $(date)"
 
-      - name: Push changes
-        uses: ad-m/github-push-action@master
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: main
-
       - name: Deploy to Vercel
         uses: amondnet/vercel-action@v25
         with:
