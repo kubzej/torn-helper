@@ -27,16 +27,8 @@
             </header>
 
             <main class="main">
-                <div class="analyzer-controls">
-                    <div class="control-group">
-                        <button id="analyzeBtn" class="btn btn-primary">
-                            <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-                                <polyline points="22,6 12,13 2,6"/>
-                            </svg>
-                            Start Analysis
-                        </button>
-                    </div>
+                <div class="analyzer-controls" style="display: none;">
+                    <!-- Controls hidden since analysis runs automatically -->
                 </div>
 
                 <div class="progress-section hidden" id="progressSection">
@@ -104,30 +96,19 @@
                             </tbody>
                         </table>
                     </div>
-
-                    <div class="results-actions">
-                        <button id="exportBtn" class="btn btn-secondary">
-                            <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                <polyline points="7,10 12,15 17,10"/>
-                                <line x1="12" y1="15" x2="12" y2="3"/>
-                            </svg>
-                            Export Results
-                        </button>
-                    </div>
                 </div>
 
                 <div class="empty-state" id="emptyState">
                     <div class="empty-state-content">
                         <div class="empty-state-icon">📊</div>
-                        <h3>Ready to Analyze</h3>
-                        <p>Click "Start Analysis" to compare city shop prices with bazaar prices and find profitable trading opportunities.</p>
+                        <h3>Loading Analysis</h3>
+                        <p>Automatically loading the latest profit analysis data. This data is updated hourly with current market prices.</p>
                         <div class="empty-state-features">
                             <ul>
-                                <li>✅ Compare all tradeable items</li>
+                                <li>✅ Latest city shop prices</li>
                                 <li>✅ Real-time bazaar prices</li>
-                                <li>✅ Profit margin calculations</li>
-                                <li>✅ Export results</li>
+                                <li>✅ Automatic profit calculations</li>
+                                <li>✅ Updated hourly</li>
                             </ul>
                         </div>
                     </div>

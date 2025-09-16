@@ -1,18 +1,15 @@
-import {
-  ProfitAnalysisItem,
-  ProfitAnalysisResult,
-  ShopData,
-  ShopDataItem,
-} from '@/types';
-import { StorageManager } from './storage';
-import { TornAPI } from './api/torn';
-import { TornExchangeAPI } from './api/tornexchange';
+import { ProfitAnalysisItem } from '@/types';
+
+interface ProfitAnalysisData {
+  lastUpdated: string;
+  totalItems: number;
+  profitableItems: number;
+  results: ProfitAnalysisItem[];
+}
 
 class ProfitAnalyzer {
-  private storage: StorageManager;
-  private tornAPI: TornAPI | null = null;
-  private teAPI: TornExchangeAPI;
   private results: ProfitAnalysisItem[] = [];
+  private analysisData: ProfitAnalysisData | null = null;
   private currentSort: {
     column: keyof ProfitAnalysisItem;
     direction: 'asc' | 'desc';
@@ -22,7 +19,6 @@ class ProfitAnalyzer {
   };
 
   // DOM elements
-  private analyzeBtn: HTMLButtonElement;
   private progressSection: HTMLElement;
   private progressFill: HTMLElement;
   private progressText: HTMLElement;
@@ -30,32 +26,15 @@ class ProfitAnalyzer {
   private resultsSummary: HTMLElement;
   private resultsTable: HTMLTableElement;
   private resultsTableBody: HTMLElement;
-  private exportBtn: HTMLButtonElement;
   private emptyState: HTMLElement;
 
   constructor() {
-    this.storage = new StorageManager();
-    this.teAPI = new TornExchangeAPI();
-
-    this.initializeAPI();
     this.initializeDOM();
     this.attachEventListeners();
-  }
-
-  private initializeAPI(): void {
-    const storedKey = this.storage.getApiKey();
-    if (storedKey) {
-      this.tornAPI = new TornAPI(storedKey.key);
-    } else {
-      // Redirect to main page if no API key
-      window.location.href = '/';
-    }
+    this.loadAnalysisData();
   }
 
   private initializeDOM(): void {
-    this.analyzeBtn = document.getElementById(
-      'analyzeBtn'
-    ) as HTMLButtonElement;
     this.progressSection = document.getElementById('progressSection')!;
     this.progressFill = document.getElementById('progressFill')!;
     this.progressText = document.getElementById('progressText')!;
@@ -65,14 +44,10 @@ class ProfitAnalyzer {
       'resultsTable'
     ) as HTMLTableElement;
     this.resultsTableBody = document.getElementById('resultsTableBody')!;
-    this.exportBtn = document.getElementById('exportBtn') as HTMLButtonElement;
     this.emptyState = document.getElementById('emptyState')!;
   }
 
   private attachEventListeners(): void {
-    this.analyzeBtn.addEventListener('click', () => this.startAnalysis());
-    this.exportBtn.addEventListener('click', () => this.exportResults());
-
     // Add click listeners to sortable table headers
     this.resultsTable.querySelectorAll('th.sortable').forEach((header) => {
       header.addEventListener('click', () => {
@@ -84,182 +59,30 @@ class ProfitAnalyzer {
     });
   }
 
-  private async startAnalysis(): Promise<void> {
-    if (!this.tornAPI) return;
-
+  private async loadAnalysisData(): Promise<void> {
     try {
       this.showProgress();
-      this.hideEmptyState();
-      this.hideResults();
+      this.updateProgress(50, 'Loading profit analysis data...');
 
-      // Check TornExchange API status
-      this.updateProgress(0, 'Checking TornExchange API...');
-      const status = await this.teAPI.getStatus();
-      if (!status) {
-        throw new Error('TornExchange API is not available');
+      const response = await fetch('/data/profit-analysis.json');
+      if (!response.ok) {
+        throw new Error(`Failed to load data: ${response.status}`);
       }
 
-      // Load or fetch shop data
-      this.updateProgress(10, 'Loading shop data...');
-      let shopData = this.storage.getCache<ShopData>('shopData');
+      this.analysisData = await response.json();
+      this.results = this.analysisData?.results || [];
 
-      if (!shopData) {
-        this.updateProgress(15, 'Fetching fresh shop data...');
-        shopData = await this.fetchShopData();
-        this.storage.setCache('shopData', shopData, 30 * 60 * 1000); // Cache for 30 minutes
-      }
+      this.updateProgress(100, 'Data loaded successfully!');
 
-      const tradeableItems = this.getTradeableItems(shopData);
-      this.updateProgress(20, `Found ${tradeableItems.length} tradeable items`);
-
-      // Analyze all items
-      this.results = [];
-      const total = tradeableItems.length;
-
-      for (let i = 0; i < total; i++) {
-        const item = tradeableItems[i];
-        const progress = 20 + (i / total) * 70; // 20-90%
-        this.updateProgress(progress, `Analyzing: ${item.name}`);
-
-        try {
-          const result = await this.analyzeItem(item.itemId, item);
-          this.results.push(result);
-        } catch (error) {
-          console.error(`Error analyzing item ${item.itemId}:`, error);
-          this.results.push({
-            itemId: item.itemId,
-            name: item.name,
-            shopPrice: item.shops[0].price,
-            shopName: item.shops[0].shopName,
-            bazaarPrice: null,
-            profit: null,
-            profitMargin: null,
-            profitPer100: null,
-            maxStock: item.shops[0].stock,
-            status: 'Error: ' + (error as Error).message,
-          });
-        }
-      }
-
-      this.updateProgress(100, 'Analysis complete!');
-      this.hideProgress();
-      this.displayResults();
+      setTimeout(() => {
+        this.displayResults();
+      }, 500);
     } catch (error) {
+      this.showError(
+        'Failed to load profit analysis data: ' + (error as Error).message
+      );
       this.hideProgress();
-      this.showError((error as Error).message);
-      console.error('Analysis error:', error);
     }
-  }
-
-  private async fetchShopData(): Promise<ShopData> {
-    if (!this.tornAPI) throw new Error('No API available');
-
-    const cityShops = await this.tornAPI.getCityShops();
-    const items = await this.tornAPI.getItems();
-
-    const shopData: ShopData = {
-      lastUpdated: new Date().toISOString(),
-      shops: {},
-      items: {},
-    };
-
-    // Process each shop
-    for (const [shopId, shop] of Object.entries(cityShops)) {
-      shopData.shops[shopId] = {
-        name: shop.name,
-        inventory: shop.inventory,
-      };
-
-      if (shop.inventory) {
-        for (const [itemId, item] of Object.entries(shop.inventory)) {
-          if (item.in_stock > 0) {
-            const itemData = items[itemId];
-
-            if (!shopData.items[itemId]) {
-              shopData.items[itemId] = {
-                name: item.name,
-                type: itemData ? itemData.type : 'Unknown',
-                tradeable: itemData ? itemData.tradeable : false,
-                shops: [],
-              };
-            }
-
-            shopData.items[itemId].shops.push({
-              shopId,
-              shopName: shop.name,
-              price: item.price,
-              stock: item.in_stock,
-            });
-          }
-        }
-      }
-    }
-
-    // Sort shops by price for each item
-    for (const itemData of Object.values(shopData.items)) {
-      itemData.shops.sort((a, b) => a.price - b.price);
-    }
-
-    return shopData;
-  }
-
-  private getTradeableItems(
-    shopData: ShopData
-  ): Array<ShopDataItem & { itemId: string }> {
-    return Object.entries(shopData.items)
-      .filter(([, item]) => item.tradeable)
-      .map(([itemId, item]) => ({
-        itemId,
-        ...item,
-      }));
-  }
-
-  private async analyzeItem(
-    itemId: string,
-    itemData: ShopDataItem & { itemId: string }
-  ): Promise<ProfitAnalysisItem> {
-    const cheapestShop = itemData.shops[0]; // Already sorted by price
-
-    // Get highest bazaar price from all listings
-    const bazaarData = await this.teAPI.getHighestPrice(itemId);
-
-    if (!bazaarData || !bazaarData.price) {
-      return {
-        itemId,
-        name: itemData.name,
-        shopPrice: cheapestShop.price,
-        shopName: cheapestShop.shopName,
-        bazaarPrice: null,
-        profit: null,
-        profitMargin: null,
-        profitPer100: null,
-        maxStock: cheapestShop.stock,
-        status: 'No Bazaar Data',
-      };
-    }
-
-    // Use the highest bazaar price as the selling price
-    const sellingPrice = bazaarData.price;
-    const profit = sellingPrice - cheapestShop.price;
-    const profitMargin = (profit / cheapestShop.price) * 100;
-    const maxBuy = Math.min(cheapestShop.stock, 100);
-    const profitPer100 = profit * maxBuy;
-
-    return {
-      itemId,
-      name: itemData.name,
-      shopPrice: cheapestShop.price,
-      shopName: cheapestShop.shopName,
-      bazaarPrice: sellingPrice,
-      bazaarTrader: bazaarData.trader,
-      totalListings: bazaarData.totalListings,
-      profit,
-      profitMargin,
-      profitPer100,
-      maxStock: cheapestShop.stock,
-      maxBuy,
-      status: profit > 0 ? 'Profitable' : 'Loss',
-    };
   }
 
   private displayResults(): void {
@@ -267,6 +90,7 @@ class ProfitAnalyzer {
     this.updateSortIndicators();
     this.showResults();
     this.updateSummary();
+    this.hideProgress();
   }
 
   private handleHeaderClick(column: keyof ProfitAnalysisItem): void {
@@ -360,60 +184,49 @@ class ProfitAnalyzer {
   }
 
   private updateSummary(): void {
+    if (!this.analysisData) return;
+
     const profitable = this.results.filter((r) => r.status === 'Profitable');
     const avgMargin =
       profitable.length > 0
         ? profitable.reduce((sum, r) => sum + (r.profitMargin || 0), 0) /
           profitable.length
         : 0;
-    const totalPotential = profitable.reduce(
-      (sum, r) => sum + (r.profitPer100 || 0),
-      0
-    );
+
+    const lastUpdated = new Date(
+      this.analysisData.lastUpdated
+    ).toLocaleString();
 
     this.resultsSummary.innerHTML = `
       <div class="summary-item">
-        <div class="summary-value">${profitable.length}</div>
-        <div class="summary-label">Profitable Items</div>
+        <span class="summary-label">Total Items:</span>
+        <span class="summary-value">${this.analysisData.totalItems}</span>
       </div>
       <div class="summary-item">
-        <div class="summary-value">${this.formatPercentage(avgMargin)}</div>
-        <div class="summary-label">Avg Margin</div>
+        <span class="summary-label">Profitable:</span>
+        <span class="summary-value">${this.analysisData.profitableItems}</span>
       </div>
       <div class="summary-item">
-        <div class="summary-value">${this.formatCurrency(totalPotential)}</div>
-        <div class="summary-label">Total Potential</div>
+        <span class="summary-label">Avg Margin:</span>
+        <span class="summary-value">${avgMargin.toFixed(1)}%</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">Last Updated:</span>
+        <span class="summary-value">${lastUpdated}</span>
       </div>
     `;
   }
 
-  private exportResults(): void {
-    const data: ProfitAnalysisResult = {
-      timestamp: new Date().toISOString(),
-      totalItems: this.results.length,
-      profitable: this.results.filter((r) => r.status === 'Profitable').length,
-      results: this.results,
-    };
-
-    const blob = new Blob([JSON.stringify(data, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `profit-analysis-${
-      new Date().toISOString().split('T')[0]
-    }.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  // UI helper methods
+  private updateProgress(percentage: number, message: string): void {
+    this.progressFill.style.width = `${percentage}%`;
+    this.progressText.textContent = message;
   }
 
-  // UI Helper methods
   private showProgress(): void {
     this.progressSection.classList.remove('hidden');
+    this.hideResults();
+    this.hideEmptyState();
   }
 
   private hideProgress(): void {
@@ -432,13 +245,8 @@ class ProfitAnalyzer {
     this.emptyState.classList.add('hidden');
   }
 
-  private updateProgress(percentage: number, text: string): void {
-    this.progressFill.style.width = `${percentage}%`;
-    this.progressText.textContent = text;
-  }
-
   private showError(message: string): void {
-    alert(`Error: ${message}`);
+    alert(message);
   }
 
   // Formatting methods
@@ -458,20 +266,18 @@ class ProfitAnalyzer {
   }
 
   private getProfitClass(value: number | null): string {
-    if (value === null) return 'profit-neutral';
-    if (value > 0) return 'profit-positive';
-    if (value < 0) return 'profit-negative';
-    return 'profit-neutral';
+    if (value === null) return '';
+    return value > 0 ? 'profit-positive' : 'profit-negative';
   }
 
   private getStatusClass(status: string): string {
-    if (status === 'Profitable') return 'status-profitable';
-    if (status === 'Loss') return 'status-loss';
-    return 'status-no-data';
+    return status === 'Profitable'
+      ? 'status-profitable'
+      : 'status-not-profitable';
   }
 }
 
-// Initialize when DOM is loaded
+// Initialize the profit analyzer when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
   new ProfitAnalyzer();
 });
