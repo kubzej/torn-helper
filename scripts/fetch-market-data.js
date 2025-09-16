@@ -64,7 +64,20 @@ class TornExchangeAPI {
 
       return await response.json();
     } catch (error) {
-      console.error(`TornExchange API error for ${endpoint}:`, error.message);
+      if (
+        error.code === 'ENOTFOUND' ||
+        error.code === 'ECONNREFUSED' ||
+        error.message.includes('fetch failed')
+      ) {
+        console.error(
+          `TornExchange API network error for ${endpoint}: ${error.message}`
+        );
+        console.error(
+          'This might be a temporary network issue or the API might be down.'
+        );
+      } else {
+        console.error(`TornExchange API error for ${endpoint}:`, error.message);
+      }
       throw error;
     }
   }
@@ -93,9 +106,11 @@ class TornExchangeAPI {
   }
   async getStatus() {
     try {
+      console.log('Attempting to connect to TornExchange API...');
       await this.makeRequest('/status');
       return true;
     } catch (error) {
+      console.log('TornExchange API status check failed:', error.message);
       return false;
     }
   }
@@ -130,9 +145,18 @@ async function fetchMarketData() {
 
   // Check TornExchange API status
   console.log('Checking TornExchange API status...');
-  const status = await teAPI.getStatus();
-  if (!status) {
-    throw new Error('TornExchange API is not available');
+  try {
+    const status = await teAPI.getStatus();
+    if (!status) {
+      console.warn(
+        'TornExchange API status check failed, but continuing anyway...'
+      );
+    } else {
+      console.log('TornExchange API is available ✓');
+    }
+  } catch (error) {
+    console.warn('TornExchange API status check error:', error.message);
+    console.warn('Continuing with data fetch anyway...');
   }
 
   // Fetch shop data
@@ -205,7 +229,16 @@ async function fetchMarketData() {
     const cheapestShop = item.shops[0];
     if (!cheapestShop) continue;
 
-    const bazaarPrice = await teAPI.getHighestPrice(item.itemId);
+    let bazaarPrice = null;
+    try {
+      bazaarPrice = await teAPI.getHighestPrice(item.itemId);
+    } catch (error) {
+      console.warn(
+        `Failed to get bazaar price for ${item.name}:`,
+        error.message
+      );
+      // Continue with null bazaar price
+    }
 
     const analysisItem = {
       itemId: item.itemId,
@@ -223,7 +256,9 @@ async function fetchMarketData() {
       status:
         bazaarPrice && bazaarPrice > cheapestShop.price
           ? 'Profitable'
-          : 'Not Profitable',
+          : bazaarPrice
+          ? 'Not Profitable'
+          : 'Unknown',
       shopName: cheapestShop.shopName,
     };
 
@@ -233,12 +268,23 @@ async function fetchMarketData() {
   // Sort by profit margin (highest first)
   results.sort((a, b) => (b.profitMargin || 0) - (a.profitMargin || 0));
 
+  const profitableCount = results.filter(
+    (r) => r.status === 'Profitable'
+  ).length;
+  const unknownCount = results.filter((r) => r.status === 'Unknown').length;
+
   const finalData = {
     lastUpdated: new Date().toISOString(),
     totalItems: results.length,
-    profitableItems: results.filter((r) => r.status === 'Profitable').length,
+    profitableItems: profitableCount,
+    unknownItems: unknownCount,
     results: results,
   };
+
+  console.log(`\nProcessing complete!`);
+  console.log(`- Total items processed: ${results.length}`);
+  console.log(`- Profitable items: ${profitableCount}`);
+  console.log(`- Items with unknown bazaar prices: ${unknownCount}`);
 
   // Ensure output directory exists
   const outputDir = path.join(process.cwd(), 'public', 'data');
@@ -248,6 +294,13 @@ async function fetchMarketData() {
 
   // Write the data
   const outputPath = path.join(outputDir, 'profit-analysis.json');
+
+  // Ensure output directory exists
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+    console.log(`Created output directory: ${outputDir}`);
+  }
+
   fs.writeFileSync(outputPath, JSON.stringify(finalData, null, 2));
 
   console.log(`Market data successfully saved to ${outputPath}`);
