@@ -7,8 +7,12 @@
   "framework": null,
   "rewrites": [
     {
-      "source": "/analyzer",
-      "destination": "/analyzer.html"
+      "source": "/profitAnalyzer",
+      "destination": "/profitAnalyzer.html"
+    },
+    {
+      "source": "/rentalAnalyzer",
+      "destination": "/rentalAnalyzer.html"
     },
     {
       "source": "/(.*)",

@@ -10,7 +10,8 @@ export default defineConfig({
       input: {
         main: './index.html',
         app: './app.html',
-        analyzer: './analyzer.html',
+        profitAnalyzer: './profitAnalyzer.html',
+        rentalAnalyzer: './rentalAnalyzer.html',
       },
     },
   },

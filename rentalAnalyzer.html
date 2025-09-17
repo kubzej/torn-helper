@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rental Analyzer - Torn Helper</title>
+    <link rel="stylesheet" href="/src/styles/main.css">
+    <link rel="stylesheet" href="/src/styles/rentalAnalyzer.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="app">
+        <div class="container">
+            <header class="header">
+                <nav class="nav">
+                    <a href="/" class="nav-back">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M19 12H5"/>
+                            <path d="M12 19l-7-7 7-7"/>
+                        </svg>
+                        Back to Dashboard
+                    </a>
+                    <h1 class="page-title">🏠 Rental Analyzer</h1>
+                </nav>
+            </header>
+
+            <main class="main">
+                <!-- Filter Controls -->
+                <div class="filters-section" id="filtersSection">
+                    <div class="filters-card">
+                        <h3>🔍 Filter Rentals</h3>
+                        <div class="filters-grid">
+                            <div class="filter-group">
+                                <label for="propertyTypeSelect">Property Type</label>
+                                <select id="propertyTypeSelect" class="filter-select">
+                                    <option value="">All Types</option>
+                                    <option value="1">Trailer</option>
+                                    <option value="2">Apartment</option>
+                                    <option value="3">Semi-detached House</option>
+                                    <option value="4">Detached House</option>
+                                    <option value="5">Beach House</option>
+                                    <option value="6">Chalet</option>
+                                    <option value="7">Villa</option>
+                                    <option value="8">Penthouse</option>
+                                    <option value="9">Mansion</option>
+                                    <option value="10">Ranch</option>
+                                    <option value="11">Palace</option>
+                                    <option value="12">Castle</option>
+                                    <option value="13">Private Island</option>
+                                </select>
+                            </div>
+                            
+                            <div class="filter-group">
+                                <label for="minHappiness">Min Happiness</label>
+                                <input type="number" id="minHappiness" class="filter-input" placeholder="e.g. 100" min="0">
+                            </div>
+                            
+                            <div class="filter-group">
+                                <label for="maxCostPerDay">Max Cost Per Day ($)</label>
+                                <input type="number" id="maxCostPerDay" class="filter-input" placeholder="e.g. 50000" min="0">
+                            </div>
+                            
+                            <div class="filter-group">
+                                <label for="minRentalPeriod">Min Rental Period (days)</label>
+                                <input type="number" id="minRentalPeriod" class="filter-input" placeholder="e.g. 7" min="1">
+                            </div>
+                            
+                            <div class="filter-group">
+                                <label for="maxRentalPeriod">Max Rental Period (days)</label>
+                                <input type="number" id="maxRentalPeriod" class="filter-input" placeholder="e.g. 365" min="1">
+                            </div>
+                        </div>
+                        
+                        <div class="filter-actions">
+                            <button id="fetchRentalsBtn" class="btn btn-primary">
+                                <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                    <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                                </svg>
+                                Fetch Rentals
+                            </button>
+                            <button id="clearFiltersBtn" class="btn btn-secondary">
+                                <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                    <path d="M6 18L18 6M6 6l12 12"/>
+                                </svg>
+                                Clear Filters
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Progress Section -->
+                <div class="progress-section hidden" id="progressSection">
+                    <div class="progress-card">
+                        <h3>Fetching Rental Data...</h3>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                        <p class="progress-text" id="progressText">Preparing to fetch properties...</p>
+                    </div>
+                </div>
+
+                <!-- Results Section -->
+                <div class="results-section hidden" id="resultsSection">
+                    <div class="results-header">
+                        <h2>Available Rentals</h2>
+                        <div class="results-summary" id="resultsSummary">
+                            <!-- Summary will be populated here -->
+                        </div>
+                    </div>
+                    
+                    <div class="rentals-table-container">
+                        <table class="rentals-table" id="rentalsTable">
+                            <thead>
+                                <tr>
+                                    <th data-sort="name" class="sortable">
+                                        Type
+                                        <span class="sort-indicator"></span>
+                                    </th>
+                                    <th data-sort="happy" class="sortable">
+                                        Happiness
+                                        <span class="sort-indicator"></span>
+                                    </th>
+                                    <th data-sort="cost_per_day" class="sortable">
+                                        Cost Per Day
+                                        <span class="sort-indicator"></span>
+                                    </th>
+                                    <th data-sort="cost" class="sortable">
+                                        Total Cost
+                                        <span class="sort-indicator"></span>
+                                    </th>
+                                    <th data-sort="rental_period" class="sortable">
+                                        Rental Period
+                                        <span class="sort-indicator"></span>
+                                    </th>
+                                    <th data-sort="modifications" class="sortable">
+                                        Modifications
+                                        <span class="sort-indicator"></span>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody id="rentalsTableBody">
+                                <!-- Rental data will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Error Section -->
+                <div class="error-section hidden" id="errorSection">
+                    <div class="error-card">
+                        <h3>⚠️ Error</h3>
+                        <p class="error-message" id="errorMessage"></p>
+                        <button id="retryBtn" class="btn btn-primary">Try Again</button>
+                    </div>
+                </div>
+            </main>
+
+            <footer class="footer">
+                <p>&copy; 2025 kubzej - Open source Torn helper tools</p>
+            </footer>
+        </div>
+    </div>
+
+    <div id="loadingOverlay" class="loading-overlay hidden">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p class="loading-text">Loading rental data...</p>
+        </div>
+    </div>
+
+    <script type="module" src="/src/rentalAnalyzer.ts"></script>
+</body>
+</html>

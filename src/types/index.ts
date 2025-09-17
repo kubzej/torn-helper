@@ -158,3 +158,43 @@ export type APIKeyValidationResult = {
   user?: TornUser;
   error?: string;
 };
+
+// Rental Types
+export interface TornProperty {
+  name: string;
+  cost: number;
+  happiness: number;
+  upkeep: number;
+  staff_cost: number;
+  size: number;
+  property_type: number;
+  marketprice: number;
+}
+
+export interface RentalData {
+  // API response fields
+  happy: number;
+  cost: number;
+  cost_per_day: number;
+  rental_period: number;
+  market_price: number;
+  upkeep: number;
+  modifications: string[];
+  property: {
+    id: number;
+    name: string;
+  };
+}
+
+export interface RentalFilters {
+  propertyType: string;
+  minHappiness: number;
+  maxCostPerDay: number;
+  minRentalPeriod: number;
+  maxRentalPeriod: number;
+}
+
+export interface RentalSortOption {
+  field: 'happy' | 'cost_per_day' | 'rental_period' | 'property_name';
+  direction: 'asc' | 'desc';
+}

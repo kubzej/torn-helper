@@ -23,7 +23,16 @@ class TornHelperApp {
         'Compare city shop prices with bazaar prices to find profitable trading opportunities. Analyze all tradeable items and calculate profit margins.',
       icon: '📊',
       status: 'ready',
-      route: '/analyzer.html',
+      route: '/profitAnalyzer.html',
+    },
+    {
+      id: 'rental-analyzer',
+      title: '🏠 Rental Analyzer',
+      description:
+        'Analyze available property rentals with filters for happiness costs, daily costs, and rental periods. Find the best rental deals sorted by your preferences.',
+      icon: '🏘️',
+      status: 'ready',
+      route: '/rentalAnalyzer.html',
     },
     {
       id: 'future-use-cases',
@@ -129,7 +138,7 @@ class TornHelperApp {
   ): Promise<APIKeyValidationResult> {
     try {
       const tempAPI = new TornAPI(apiKey);
-      const user = await tempAPI.getUser();
+      const user = await tempAPI.getProfile();
 
       return {
         valid: true,
