@@ -11,6 +11,7 @@ export default defineConfig({
         main: './index.html',
         app: './app.html',
         profitAnalyzer: './profitAnalyzer.html',
+        profitLogger: './profitLogger.html',
         rentalAnalyzer: './rentalAnalyzer.html',
       },
     },
