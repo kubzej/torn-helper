@@ -26,6 +26,15 @@ class TornHelperApp {
       route: '/profitAnalyzer.html',
     },
     {
+      id: 'daily-profit-logger',
+      title: '📊 Daily Profit Logger',
+      description:
+        'Track your daily profit and loss from all transactions. Analyze income from sales, trades, and expenses from purchases to see your net profit over time.',
+      icon: '💵',
+      status: 'ready',
+      route: '/profitLogger.html',
+    },
+    {
       id: 'rental-analyzer',
       title: '🏠 Rental Analyzer',
       description:

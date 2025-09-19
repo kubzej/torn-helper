@@ -88,6 +88,13 @@ export class TornAPI {
   }
 
   /**
+   * Public method to make API requests - for use by other modules
+   */
+  async request<T>(endpoint: string): Promise<T> {
+    return this.makeRequest<T>(endpoint);
+  }
+
+  /**
    * Get all items with their details
    */
   async getItems(): Promise<{ [itemId: string]: TornItem }> {
