@@ -11,6 +11,10 @@
       "destination": "/profitAnalyzer.html"
     },
     {
+      "source": "/profitLogger",
+      "destination": "/profitLogger.html"
+    },
+    {
       "source": "/rentalAnalyzer",
       "destination": "/rentalAnalyzer.html"
     },
