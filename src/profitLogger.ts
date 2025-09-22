@@ -162,28 +162,156 @@ class ProfitLogger {
     const now = Math.floor(Date.now() / 1000);
     const fromTimestamp = now - days * 24 * 60 * 60;
 
-    this.updateProgress(10, 'Fetching money incoming logs...');
+    this.updateProgress(10, 'Fetching money logs...');
 
     // Fetch all money-related logs
     // Category 13: Money (general)
     // Category 14: Money outgoing
     // Category 17: Money incoming
+    console.log('🔍 FETCHING LOGS FROM MULTIPLE CATEGORIES');
+    console.log(
+      `📅 Time range: ${new Date(
+        fromTimestamp * 1000
+      ).toISOString()} to ${new Date(now * 1000).toISOString()}`
+    );
+
     const [moneyLogs, outgoingLogs, incomingLogs] = await Promise.all([
       this.fetchLogs(13, fromTimestamp, now),
       this.fetchLogs(14, fromTimestamp, now),
       this.fetchLogs(17, fromTimestamp, now),
     ]);
 
+    console.log(`📊 FETCH RESULTS:`);
+    console.log(
+      `- Category 13 (Money general): ${moneyLogs.length} transactions`
+    );
+    console.log(
+      `- Category 14 (Money outgoing): ${outgoingLogs.length} transactions`
+    );
+    console.log(
+      `- Category 17 (Money incoming): ${incomingLogs.length} transactions`
+    );
+
+    // Show sample transactions from each category
+    console.log(`\n📋 SAMPLE TRANSACTIONS BY CATEGORY:`);
+
+    if (moneyLogs.length > 0) {
+      console.log(`\n🔸 Category 13 (Money general) samples:`);
+      moneyLogs.slice(0, 5).forEach((log, i) => {
+        const amount = this.extractAmount ? this.extractAmount(log) : 0;
+        console.log(
+          `  ${i + 1}. ID: ${log.id}, Title: "${
+            log.details.title
+          }", Amount: $${amount.toLocaleString()}, Color: ${
+            log.params.color || 'none'
+          }`
+        );
+      });
+    }
+
+    if (outgoingLogs.length > 0) {
+      console.log(`\n🔸 Category 14 (Money outgoing) samples:`);
+      outgoingLogs.slice(0, 5).forEach((log, i) => {
+        const amount = this.extractAmount ? this.extractAmount(log) : 0;
+        console.log(
+          `  ${i + 1}. ID: ${log.id}, Title: "${
+            log.details.title
+          }", Amount: $${amount.toLocaleString()}, Color: ${
+            log.params.color || 'none'
+          }`
+        );
+      });
+    }
+
+    if (incomingLogs.length > 0) {
+      console.log(`\n🔸 Category 17 (Money incoming) samples:`);
+      incomingLogs.slice(0, 5).forEach((log, i) => {
+        const amount = this.extractAmount ? this.extractAmount(log) : 0;
+        console.log(
+          `  ${i + 1}. ID: ${log.id}, Title: "${
+            log.details.title
+          }", Amount: $${amount.toLocaleString()}, Color: ${
+            log.params.color || 'none'
+          }`
+        );
+      });
+    }
+
     this.updateProgress(80, 'Processing transactions...');
 
     // Combine all logs
     const allLogs = [...moneyLogs, ...outgoingLogs, ...incomingLogs];
 
-    // Sort by timestamp (newest first)
-    allLogs.sort((a, b) => b.timestamp - a.timestamp);
+    console.log(`📈 TOTAL COMBINED: ${allLogs.length} transactions`);
 
-    // Group by day and calculate profits
-    const dailyProfits = this.processDailyProfits(allLogs, days);
+    // Check for duplicates by ID
+    const logIds = new Set<string>();
+    const duplicateIds = new Set<string>();
+    const duplicateTransactions = new Map<string, LogEntry[]>();
+
+    allLogs.forEach((log) => {
+      if (logIds.has(log.id)) {
+        duplicateIds.add(log.id);
+        if (!duplicateTransactions.has(log.id)) {
+          duplicateTransactions.set(log.id, []);
+        }
+        duplicateTransactions.get(log.id)!.push(log);
+      } else {
+        logIds.add(log.id);
+      }
+    });
+
+    console.log(`🚨 DUPLICATE ANALYSIS:`);
+    console.log(`- Unique transaction IDs: ${logIds.size}`);
+    console.log(`- Duplicate transaction IDs: ${duplicateIds.size}`);
+
+    if (duplicateIds.size > 0) {
+      console.log(`🔍 DUPLICATE TRANSACTION DETAILS:`);
+      Array.from(duplicateIds)
+        .slice(0, 10)
+        .forEach((id) => {
+          const instances = duplicateTransactions.get(id) || [];
+          if (instances.length > 0) {
+            const sample = instances[0];
+            console.log(
+              `- ID ${id}: "${sample.details.title}" appears ${
+                instances.length + 1
+              } times`
+            );
+            console.log(
+              `  Categories: ${instances
+                .map((i) => i.details.category)
+                .join(', ')}`
+            );
+          }
+        });
+    }
+
+    // DEDUPLICATION: Remove duplicate transactions by keeping only unique IDs
+    console.log(`🔧 DEDUPLICATING TRANSACTIONS...`);
+    const uniqueLogsMap = new Map<string, LogEntry>();
+
+    // Keep the first occurrence of each transaction ID
+    allLogs.forEach((log) => {
+      if (!uniqueLogsMap.has(log.id)) {
+        uniqueLogsMap.set(log.id, log);
+      }
+    });
+
+    const deduplicatedLogs = Array.from(uniqueLogsMap.values());
+
+    console.log(`✅ DEDUPLICATION COMPLETE:`);
+    console.log(`- Original transactions: ${allLogs.length}`);
+    console.log(`- After deduplication: ${deduplicatedLogs.length}`);
+    console.log(
+      `- Duplicates removed: ${allLogs.length - deduplicatedLogs.length}`
+    );
+
+    // Sort deduplicated logs by timestamp (newest first)
+    deduplicatedLogs.sort((a, b) => b.timestamp - a.timestamp);
+
+    // Group by day and calculate profits using deduplicated logs
+    const dailyProfits = this.processDailyProfits(deduplicatedLogs, days);
 
     this.updateProgress(100, 'Analysis complete!');
 
