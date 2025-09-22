@@ -372,23 +372,69 @@ class ProfitLogger {
 
       const dayData = dailyData.get(dateKey)!;
       const amount = this.extractAmount(log);
+      const isNeutral = this.isNeutralTransaction(log);
+
+      // Skip neutral transactions (internal transfers) from profit calculations
+      if (isNeutral) {
+        // Still log for analysis but don't affect profit/loss
+        allTransactionPatterns.push({
+          title: log.details.title,
+          category: log.details.category,
+          amount: amount,
+          isIncome: false, // Neutral, doesn't matter
+          color: log.params.color || 'none',
+          data: log.data,
+          classification: 'neutral_transaction',
+        });
+        continue;
+      }
+
       const isIncome = this.isIncomeTransaction(log);
 
       // Determine classification reasoning for logging
       let classification = 'unknown';
+      const title = log.details.title.toLowerCase();
+      const category = log.details.category.toLowerCase();
+
       if (amount === 0) {
         classification = 'no_amount_found';
       } else if (log.params.color === 'green') {
         classification = 'green_color_income';
       } else if (log.params.color === 'red') {
         classification = 'red_color_expense';
-      } else if (log.details.title.toLowerCase().includes('sell')) {
+      } else if (title.includes('sell')) {
         classification = 'title_contains_sell';
-      } else if (log.details.title.toLowerCase().includes('buy')) {
+      } else if (title.includes('piggy bank')) {
+        classification = 'piggy_bank_transfer';
+      } else if (title.includes('bank invest')) {
+        classification = 'bank_investment';
+      } else if (title.includes('trade money')) {
+        classification = 'trade_money_transfer';
+      } else if (title.includes('ammo buy')) {
+        classification = 'ammo_purchase';
+      } else if (title.includes('buy')) {
         classification = 'title_contains_buy';
-      } else if (log.details.category.toLowerCase().includes('incoming')) {
+      } else if (title.includes('bet') || title.includes('lottery bet')) {
+        classification = 'title_contains_bet';
+      } else if (
+        title.includes('casino') &&
+        (title.includes('start') || title.includes('join'))
+      ) {
+        classification = 'casino_game_start';
+      } else if (title.includes('spin the wheel start')) {
+        classification = 'casino_wheel_spin';
+      } else if (title.includes('bookie bet')) {
+        classification = 'bookie_betting';
+      } else if (title.includes('upkeep') || title.includes('donate')) {
+        classification = 'maintenance_expense';
+      } else if (
+        title.includes('money send') ||
+        title.includes('bounty place')
+      ) {
+        classification = 'money_transfer_out';
+      } else if (category.includes('incoming')) {
         classification = 'category_incoming';
-      } else if (log.details.category.toLowerCase().includes('outgoing')) {
+      } else if (category.includes('outgoing')) {
         classification = 'category_outgoing';
       } else {
         classification = 'heuristic_based';
@@ -607,38 +653,39 @@ class ProfitLogger {
   private extractAmount(log: LogEntry): number {
     const data = log.data;
 
-    // Primary amount fields (most common)
-    if (data.cost_total) return data.cost_total;
-    if (data.money_gained) return data.money_gained;
-    if (data.money_mugged) return data.money_mugged;
+    // Primary amount fields (most common) - only check if > 0
+    if (data.cost_total && data.cost_total > 0) return data.cost_total;
+    if (data.money_gained && data.money_gained > 0) return data.money_gained;
+    if (data.money_mugged && data.money_mugged > 0) return data.money_mugged;
 
-    // Casino and gambling fields
-    if (data.bet_amount) return data.bet_amount;
-    if (data.bet) return data.bet;
-    if (data.withdrawn) return data.withdrawn;
-    if (data.cost) return data.cost; // Casino lottery bet
-    if (data.money) return data.money; // General money field
-    if (data.won_amount) return data.won_amount; // Casino winnings
-    if (data.pot) return data.pot; // Casino pot winnings
+    // Casino and gambling fields - only check if > 0
+    if (data.bet_amount && data.bet_amount > 0) return data.bet_amount;
+    if (data.bet && data.bet > 0) return data.bet;
+    if (data.withdrawn && data.withdrawn > 0) return data.withdrawn;
+    if (data.cost && data.cost > 0) return data.cost; // Casino lottery bet, wheel spin cost
+    if (data.money && data.money > 0) return data.money; // General money field
+    if (data.won_amount && data.won_amount > 0) return data.won_amount; // Casino winnings
+    if (data.pot && data.pot > 0) return data.pot; // Casino pot winnings
 
-    // Mission and job rewards
-    if (data.credits) return data.credits;
-    if (data.pay) return data.pay;
+    // Mission and job rewards - only check if > 0
+    if (data.credits && data.credits > 0) return data.credits;
+    if (data.pay && data.pay > 0) return data.pay;
 
-    // Property related
-    if (data.rent) return data.rent; // Property rent
-    if (data.upkeep_paid) return data.upkeep_paid; // Property upkeep
-    if (data.donated) return data.donated; // Church donations
+    // Property related - only check if > 0
+    if (data.rent && data.rent > 0) return data.rent; // Property rent
+    if (data.upkeep_paid && data.upkeep_paid > 0) return data.upkeep_paid; // Property upkeep
+    if (data.donated && data.donated > 0) return data.donated; // Church donations
 
-    // Bounties and rewards
-    if (data.bounty_reward) return data.bounty_reward;
+    // Bounties and rewards - only check if > 0
+    if (data.bounty_reward && data.bounty_reward > 0) return data.bounty_reward;
 
-    // Banking and deposits
-    if (data.deposited) return data.deposited;
-    if (data.amount) return data.amount;
+    // Banking and deposits - only check if > 0
+    if (data.deposited && data.deposited > 0) return data.deposited;
+    if (data.amount && data.amount > 0) return data.amount;
 
-    // Market and fee related
-    if (data.fee) return data.fee;
+    // Market and fee related - only check if > 0
+    if (data.fee && data.fee > 0) return data.fee;
+    if (data.value && data.value > 0) return data.value; // Ammo purchases, item values
 
     return 0;
   }
@@ -655,10 +702,17 @@ class ProfitLogger {
 
     // Expenses (things you spend money on) - check these FIRST
     if (title.includes('buy') || title.includes('purchase')) return false;
+    if (title.includes('ammo buy')) return false; // Ammo purchases (even if green)
     if (title.includes('bet') || title.includes('lottery bet')) return false;
     if (title.includes('casino') && title.includes('join')) return false;
     if (title.includes('casino') && title.includes('start')) return false;
     if (title.includes('casino') && title.includes('lose')) return false;
+    if (title.includes('spin the wheel start')) return false; // Casino wheel spins
+    if (title.includes('high-low start')) return false; // Casino high-low game
+    if (title.includes('russian roulette join')) return false; // Casino russian roulette
+    if (title.includes('russian roulette start')) return false; // Casino russian roulette
+    if (title.includes('blackjack start')) return false; // Casino blackjack
+    if (title.includes('bookie bet')) return false; // Bookie betting
     if (title.includes('deposit') || title.includes('outgoing')) return false;
     if (title.includes('send') || title.includes('transfer')) return false;
     if (title.includes('upkeep') || title.includes('donate')) return false;
@@ -688,6 +742,33 @@ class ProfitLogger {
     if (category.includes('outgoing')) return false;
 
     // Default: if no color and no clear indicators, assume expense for safety
+    return false;
+  }
+
+  /**
+   * Determine if a transaction is neutral (internal transfer, no profit/loss impact)
+   */
+  private isNeutralTransaction(log: LogEntry): boolean {
+    const title = log.details.title.toLowerCase();
+
+    // Internal transfers and neutral actions
+    if (title.includes('piggy bank deposit')) return true; // Moving money to piggy bank
+    if (title.includes('piggy bank withdraw')) return true; // Taking money from piggy bank
+    if (title.includes('bank deposit') && !title.includes('interest'))
+      return true; // Bank deposits (not interest)
+    if (title.includes('bank withdraw') && !title.includes('fee')) return true; // Bank withdrawals (not fees)
+    if (title.includes('bank invest')) return true; // Bank investments (moving money to investment)
+
+    // Trading money movements (just moving money around in trades, not profit)
+    if (
+      title.includes('trade money add') ||
+      title.includes('trade money remove')
+    )
+      return true;
+
+    // Other internal transfers
+    if (title.includes('faction money balance change')) return true; // Faction money transfers
+
     return false;
   }
 
