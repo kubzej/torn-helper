@@ -1,6 +1,66 @@
 import { TornAPI } from '@/api/torn';
 import { StorageManager } from '@/storage';
 
+// Types for items
+interface TornItem {
+  id: number;
+  name: string;
+  description: string;
+  type: string;
+  sub_type: string;
+  is_tradable: boolean;
+  value?: {
+    buy_price?: number;
+    sell_price?: number;
+    market_price?: number;
+  };
+  circulation?: number;
+  image?: string;
+}
+
+interface ItemsResponse {
+  items: TornItem[];
+  _metadata?: any;
+}
+
+interface ItemCache {
+  items: { [key: number]: string }; // itemId -> itemName mapping
+  lastUpdated: number;
+  expiresAt: number;
+}
+
+// Item categories for fetching
+const ITEM_CATEGORIES = [
+  'Alcohol',
+  'Armor',
+  'Artifact',
+  'Book',
+  'Booster',
+  'Candy',
+  'Car',
+  'Clothing',
+  'Collectible',
+  'Defensive',
+  'Drug',
+  'Energy Drink',
+  'Enhancer',
+  'Flower',
+  'Jewelry',
+  'Material',
+  'Medical',
+  'Melee',
+  'Other',
+  'Plushie',
+  'Primary',
+  'Secondary',
+  'Special',
+  'Supply Pack',
+  'Temporary',
+  'Tool',
+  'Unused',
+  'Weapon',
+] as const;
+
 // Types for the log response
 interface LogEntry {
   id: string;
@@ -40,6 +100,7 @@ interface DailyProfit {
   expenses: number;
   netProfit: number;
   transactions: TransactionSummary[];
+  bazaarAnalytics?: BazaarAnalytics;
 }
 
 interface TransactionSummary {
@@ -51,11 +112,58 @@ interface TransactionSummary {
   isNeutral?: boolean; // For piggy bank deposits and similar transfers
 }
 
+interface BazaarTransactionInfo {
+  itemName: string;
+  quantity: number;
+  unitPrice: number;
+  totalAmount: number;
+  tradingPartner: string;
+  playerId?: string;
+  isSale: boolean; // true = sale, false = purchase
+  timestamp: number;
+  originalTitle: string;
+}
+
+interface ItemAnalytics {
+  itemName: string;
+  totalBought: number;
+  totalSold: number;
+  totalQuantityBought: number;
+  totalQuantitySold: number;
+  avgBuyPrice: number;
+  avgSellPrice: number;
+  profitMargin: number;
+  netProfit: number;
+  transactionCount: number;
+  lastActivity: number;
+}
+
+interface TradingPartnerAnalytics {
+  partnerName: string;
+  playerId?: string;
+  totalTransactions: number;
+  totalVolume: number;
+  mostTradedItem: string;
+  lastTransaction: number;
+}
+
+interface BazaarAnalytics {
+  totalBazaarProfit: number;
+  totalBazaarVolume: number;
+  totalTransactions: number;
+  mostProfitableItem: string;
+  bestTradingPartner: string;
+  itemAnalytics: ItemAnalytics[];
+  tradingPartners: TradingPartnerAnalytics[];
+  bazaarTransactions: BazaarTransactionInfo[];
+}
+
 class ProfitLogger {
   private api: TornAPI | null = null;
   private storage = new StorageManager();
   private progressCallback: ((progress: number, text: string) => void) | null =
     null;
+  private itemMapping: { [key: number]: string } = {}; // Cache for item ID -> name mapping
 
   constructor() {
     this.initializeAPI();
@@ -152,6 +260,100 @@ class ProfitLogger {
   }
 
   /**
+   * Get item name from ID using cached mapping
+   */
+  private getItemName(itemId: number): string {
+    return this.itemMapping[itemId] || `Item #${itemId}`;
+  }
+
+  /**
+   * Load cached item mapping from storage
+   */
+  private async loadItemMapping(): Promise<void> {
+    try {
+      const cacheKey = 'torn_items_cache';
+      const cached = this.storage.getCache<ItemCache>(cacheKey);
+
+      if (cached && cached.expiresAt > Date.now()) {
+        this.itemMapping = cached.items;
+        console.log(
+          `📦 Loaded ${Object.keys(this.itemMapping).length} items from cache`
+        );
+        return;
+      }
+
+      // Cache expired or doesn't exist, fetch fresh data
+      console.log('🔄 Item cache expired or missing, fetching fresh data...');
+      await this.fetchAndCacheItems();
+    } catch (error) {
+      console.warn('Failed to load item mapping:', error);
+      // Continue without item mapping - will show Item #123 format
+    }
+  }
+
+  /**
+   * Fetch all items from Torn API and cache them
+   */
+  private async fetchAndCacheItems(): Promise<void> {
+    if (!this.api) {
+      throw new Error('API not initialized');
+    }
+
+    try {
+      this.updateProgress(5, 'Fetching item data...');
+
+      const newMapping: { [key: number]: string } = {};
+      let fetchedCount = 0;
+
+      // Fetch items in batches by category for better performance
+      for (let i = 0; i < ITEM_CATEGORIES.length; i++) {
+        const category = ITEM_CATEGORIES[i];
+        const progress = 5 + (i / ITEM_CATEGORIES.length) * 15; // 5-20% progress
+
+        this.updateProgress(progress, `Fetching ${category} items...`);
+
+        try {
+          const response = await this.api.request<ItemsResponse>(
+            `torn/items?cat=${category}`
+          );
+
+          if (response.items && Array.isArray(response.items)) {
+            response.items.forEach((item: TornItem) => {
+              newMapping[item.id] = item.name;
+            });
+            fetchedCount += response.items.length;
+          }
+
+          // Small delay to avoid rate limiting
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } catch (error) {
+          console.warn(`Failed to fetch ${category} items:`, error);
+          // Continue with other categories
+        }
+      }
+
+      this.itemMapping = newMapping;
+
+      // Cache the results (expire after 24 hours)
+      const cache: ItemCache = {
+        items: newMapping,
+        lastUpdated: Date.now(),
+        expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+      };
+
+      this.storage.setCache('torn_items_cache', cache, 24 * 60 * 60 * 1000); // 24 hours
+
+      console.log(
+        `✅ Fetched and cached ${fetchedCount} items from ${ITEM_CATEGORIES.length} categories`
+      );
+      this.updateProgress(20, `Loaded ${fetchedCount} items`);
+    } catch (error) {
+      console.error('Failed to fetch items:', error);
+      throw new Error('Failed to fetch item data from Torn API');
+    }
+  }
+
+  /**
    * Analyze profit for the specified number of days
    */
   async analyzeProfitForDays(days: number): Promise<DailyProfit[]> {
@@ -159,10 +361,13 @@ class ProfitLogger {
       throw new Error('API not initialized. Please set your API key.');
     }
 
+    // Load item mapping first for better bazaar analytics
+    await this.loadItemMapping();
+
     const now = Math.floor(Date.now() / 1000);
     const fromTimestamp = now - days * 24 * 60 * 60;
 
-    this.updateProgress(10, 'Fetching money logs...');
+    this.updateProgress(25, 'Fetching money logs...');
 
     // Fetch all money-related logs
     // Category 13: Money (general)
@@ -361,6 +566,9 @@ class ProfitLogger {
       classification: string;
     }> = [];
 
+    // Track all bazaar transactions across all days
+    const allBazaarTransactions: BazaarTransactionInfo[] = [];
+
     console.log(`🔍 Starting analysis of ${logs.length} log entries...`);
 
     // Process each log entry
@@ -373,6 +581,20 @@ class ProfitLogger {
       const dayData = dailyData.get(dateKey)!;
       const amount = this.extractAmount(log);
       const isNeutral = this.isNeutralTransaction(log);
+
+      // Check if this is a bazaar transaction
+      if (this.isBazaarTransaction(log)) {
+        const bazaarTransaction = this.parseBazaarTransaction(log);
+        if (bazaarTransaction) {
+          allBazaarTransactions.push(bazaarTransaction);
+          console.log(`🏪 Bazaar transaction detected:`, {
+            title: log.details.title,
+            amount: this.extractAmount(log),
+            isSale: bazaarTransaction.isSale,
+            itemName: bazaarTransaction.itemName,
+          });
+        }
+      }
 
       // Skip neutral transactions (internal transfers) from profit calculations
       if (isNeutral) {
@@ -502,14 +724,41 @@ class ProfitLogger {
       }
     }
 
-    // Convert to array format
+    // Convert to array format and add bazaar analytics
     const result: DailyProfit[] = [];
+
+    console.log(`🏪 BAZAAR ANALYTICS SUMMARY:`);
+    console.log(
+      `- Total bazaar transactions found: ${allBazaarTransactions.length}`
+    );
+    if (allBazaarTransactions.length > 0) {
+      const sales = allBazaarTransactions.filter((t) => t.isSale);
+      const purchases = allBazaarTransactions.filter((t) => !t.isSale);
+      console.log(`- Sales: ${sales.length}, Purchases: ${purchases.length}`);
+      console.log(`- Sample transactions:`, allBazaarTransactions.slice(0, 3));
+    }
 
     for (let i = 0; i < days; i++) {
       const date = new Date();
       date.setDate(date.getDate() - i);
       const dateKey = date.toISOString().split('T')[0];
       const dayData = dailyData.get(dateKey)!;
+
+      // Filter bazaar transactions for this specific day
+      const dayBazaarTransactions = allBazaarTransactions.filter(
+        (transaction) => {
+          const transactionDate = new Date(transaction.timestamp * 1000);
+          const transactionDateKey = transactionDate
+            .toISOString()
+            .split('T')[0];
+          return transactionDateKey === dateKey;
+        }
+      );
+
+      // Calculate bazaar analytics for this day
+      const bazaarAnalytics = this.calculateBazaarAnalytics(
+        dayBazaarTransactions
+      );
 
       result.push({
         date: dateKey,
@@ -519,6 +768,7 @@ class ProfitLogger {
         transactions: Array.from(dayData.transactions.values()).sort(
           (a, b) => b.amount - a.amount
         ),
+        bazaarAnalytics,
       });
     }
 
@@ -746,8 +996,332 @@ class ProfitLogger {
   }
 
   /**
-   * Determine if a transaction is neutral (internal transfer, no profit/loss impact)
+   * Parse bazaar transaction from log title
    */
+  private parseBazaarTransaction(log: LogEntry): BazaarTransactionInfo | null {
+    const title = log.details.title;
+    const amount = this.extractAmount(log);
+
+    if (amount === 0) return null;
+
+    // Handle simple "Bazaar sell" and "Bazaar buy" formats
+    if (title.toLowerCase() === 'bazaar sell') {
+      // Extract detailed information from the actual API structure
+      const items = log.data?.items || [];
+      const firstItem = items[0];
+      const itemId = firstItem?.id;
+      const quantity = firstItem?.qty || 1;
+      const buyerPlayerId = log.data?.buyer;
+      const unitPrice = log.data?.cost_each || amount;
+
+      // Use actual item name from mapping
+      const itemName = itemId ? this.getItemName(itemId) : 'Unknown Item';
+      const tradingPartner = buyerPlayerId
+        ? `Player [${buyerPlayerId}]`
+        : 'Unknown Player';
+
+      return {
+        itemName,
+        quantity,
+        unitPrice,
+        totalAmount: amount,
+        tradingPartner,
+        isSale: true,
+        timestamp: log.timestamp,
+        originalTitle: title,
+      };
+    }
+
+    if (title.toLowerCase() === 'bazaar buy') {
+      // Extract detailed information from the actual API structure
+      const items = log.data?.items || [];
+      const firstItem = items[0];
+      const itemId = firstItem?.id;
+      const quantity = firstItem?.qty || 1;
+      const sellerPlayerId = log.data?.seller;
+      const unitPrice = log.data?.cost_each || amount;
+
+      // Use actual item name from mapping
+      const itemName = itemId ? this.getItemName(itemId) : 'Unknown Item';
+      const tradingPartner = sellerPlayerId
+        ? `Player [${sellerPlayerId}]`
+        : 'Unknown Player';
+
+      return {
+        itemName,
+        quantity,
+        unitPrice,
+        totalAmount: amount,
+        tradingPartner,
+        isSale: false,
+        timestamp: log.timestamp,
+        originalTitle: title,
+      };
+    }
+
+    // Pattern 1: "You bought [item] from [player] for $[amount]"
+    const buyPattern = /You bought (.+?) from (.+?) \[(\d+)\] for \$[\d,]+/;
+    const buyMatch = title.match(buyPattern);
+
+    if (buyMatch) {
+      const [, itemPart, playerName, playerId] = buyMatch;
+      const { itemName, quantity } = this.parseItemQuantity(itemPart);
+
+      return {
+        itemName,
+        quantity,
+        unitPrice: amount / quantity,
+        totalAmount: amount,
+        tradingPartner: playerName,
+        playerId,
+        isSale: false,
+        timestamp: log.timestamp,
+        originalTitle: title,
+      };
+    }
+
+    // Pattern 2: "You sold [item] to [player] for $[amount]"
+    const sellPattern = /You sold (.+?) to (.+?) \[(\d+)\] for \$[\d,]+/;
+    const sellMatch = title.match(sellPattern);
+
+    if (sellMatch) {
+      const [, itemPart, playerName, playerId] = sellMatch;
+      const { itemName, quantity } = this.parseItemQuantity(itemPart);
+
+      return {
+        itemName,
+        quantity,
+        unitPrice: amount / quantity,
+        totalAmount: amount,
+        tradingPartner: playerName,
+        playerId,
+        isSale: true,
+        timestamp: log.timestamp,
+        originalTitle: title,
+      };
+    }
+
+    // Pattern 3: "[Player] bought [item] for $[amount]" (your bazaar sales)
+    const bazaarSalePattern = /(.+?) \[(\d+)\] bought (.+?) for \$[\d,]+/;
+    const bazaarSaleMatch = title.match(bazaarSalePattern);
+
+    if (bazaarSaleMatch) {
+      const [, playerName, playerId, itemPart] = bazaarSaleMatch;
+      const { itemName, quantity } = this.parseItemQuantity(itemPart);
+
+      return {
+        itemName,
+        quantity,
+        unitPrice: amount / quantity,
+        totalAmount: amount,
+        tradingPartner: playerName,
+        playerId,
+        isSale: true,
+        timestamp: log.timestamp,
+        originalTitle: title,
+      };
+    }
+
+    // Pattern 4: "[Player] bought [item] from your bazaar for $[amount]"
+    const bazaarFromPattern =
+      /(.+?) \[(\d+)\] bought (.+?) from your bazaar for \$[\d,]+/;
+    const bazaarFromMatch = title.match(bazaarFromPattern);
+
+    if (bazaarFromMatch) {
+      const [, playerName, playerId, itemPart] = bazaarFromMatch;
+      const { itemName, quantity } = this.parseItemQuantity(itemPart);
+
+      return {
+        itemName,
+        quantity,
+        unitPrice: amount / quantity,
+        totalAmount: amount,
+        tradingPartner: playerName,
+        playerId,
+        isSale: true,
+        timestamp: log.timestamp,
+        originalTitle: title,
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Parse item name and quantity from item string (e.g., "Xanax x5" -> {itemName: "Xanax", quantity: 5})
+   */
+  private parseItemQuantity(itemPart: string): {
+    itemName: string;
+    quantity: number;
+  } {
+    // Pattern: "Item Name x10" or "Item Name"
+    const quantityMatch = itemPart.match(/(.+?)\s+x(\d+)$/);
+
+    if (quantityMatch) {
+      const [, itemName, quantityStr] = quantityMatch;
+      return {
+        itemName: itemName.trim(),
+        quantity: parseInt(quantityStr, 10),
+      };
+    }
+
+    // No quantity specified, assume 1
+    return {
+      itemName: itemPart.trim(),
+      quantity: 1,
+    };
+  }
+
+  /**
+   * Check if a log entry is a bazaar transaction
+   */
+  private isBazaarTransaction(log: LogEntry): boolean {
+    const title = log.details.title.toLowerCase();
+
+    return (
+      title.includes('bazaar sell') ||
+      title.includes('bazaar buy') ||
+      (title.includes('you bought') &&
+        title.includes('from') &&
+        title.includes('[') &&
+        title.includes(']')) ||
+      (title.includes('you sold') &&
+        title.includes('to') &&
+        title.includes('[') &&
+        title.includes(']')) ||
+      (title.includes('bought') &&
+        title.includes('for $') &&
+        title.includes('[') &&
+        title.includes(']')) ||
+      (title.includes('bought') && title.includes('from your bazaar'))
+    );
+  }
+
+  /**
+   * Calculate comprehensive bazaar analytics from transactions
+   */
+  private calculateBazaarAnalytics(
+    bazaarTransactions: BazaarTransactionInfo[]
+  ): BazaarAnalytics {
+    if (bazaarTransactions.length === 0) {
+      return {
+        totalBazaarProfit: 0,
+        totalBazaarVolume: 0,
+        totalTransactions: 0,
+        mostProfitableItem: 'N/A',
+        bestTradingPartner: 'N/A',
+        itemAnalytics: [],
+        tradingPartners: [],
+        bazaarTransactions: [],
+      };
+    }
+
+    // Group transactions by item
+    const itemGroups = new Map<string, BazaarTransactionInfo[]>();
+    bazaarTransactions.forEach((transaction) => {
+      const key = transaction.itemName;
+      if (!itemGroups.has(key)) {
+        itemGroups.set(key, []);
+      }
+      itemGroups.get(key)!.push(transaction);
+    });
+
+    // Calculate item analytics
+    const itemAnalytics: ItemAnalytics[] = [];
+    let totalProfit = 0;
+    let totalVolume = 0;
+
+    itemGroups.forEach((transactions, itemName) => {
+      const purchases = transactions.filter((t) => !t.isSale);
+      const sales = transactions.filter((t) => t.isSale);
+
+      const totalBought = purchases.reduce((sum, t) => sum + t.totalAmount, 0);
+      const totalSold = sales.reduce((sum, t) => sum + t.totalAmount, 0);
+      const totalQuantityBought = purchases.reduce(
+        (sum, t) => sum + t.quantity,
+        0
+      );
+      const totalQuantitySold = sales.reduce((sum, t) => sum + t.quantity, 0);
+
+      const avgBuyPrice =
+        totalQuantityBought > 0 ? totalBought / totalQuantityBought : 0;
+      const avgSellPrice =
+        totalQuantitySold > 0 ? totalSold / totalQuantitySold : 0;
+      const profitMargin =
+        avgBuyPrice > 0
+          ? ((avgSellPrice - avgBuyPrice) / avgBuyPrice) * 100
+          : 0;
+      const netProfit = totalSold - totalBought;
+
+      totalProfit += netProfit;
+      totalVolume += totalBought + totalSold;
+
+      itemAnalytics.push({
+        itemName,
+        totalBought,
+        totalSold,
+        totalQuantityBought,
+        totalQuantitySold,
+        avgBuyPrice,
+        avgSellPrice,
+        profitMargin,
+        netProfit,
+        transactionCount: transactions.length,
+        lastActivity: Math.max(...transactions.map((t) => t.timestamp)),
+      });
+    });
+
+    // Sort by net profit descending
+    itemAnalytics.sort((a, b) => b.netProfit - a.netProfit);
+
+    // Group by trading partner
+    const partnerGroups = new Map<string, BazaarTransactionInfo[]>();
+    bazaarTransactions.forEach((transaction) => {
+      const key = transaction.tradingPartner;
+      if (!partnerGroups.has(key)) {
+        partnerGroups.set(key, []);
+      }
+      partnerGroups.get(key)!.push(transaction);
+    });
+
+    // Calculate trading partner analytics
+    const tradingPartners: TradingPartnerAnalytics[] = [];
+    partnerGroups.forEach((transactions, partnerName) => {
+      const itemCounts = new Map<string, number>();
+      transactions.forEach((transaction) => {
+        const count = itemCounts.get(transaction.itemName) || 0;
+        itemCounts.set(transaction.itemName, count + 1);
+      });
+
+      const mostTradedItem =
+        Array.from(itemCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ||
+        'N/A';
+
+      tradingPartners.push({
+        partnerName,
+        playerId: transactions[0].playerId,
+        totalTransactions: transactions.length,
+        totalVolume: transactions.reduce((sum, t) => sum + t.totalAmount, 0),
+        mostTradedItem,
+        lastTransaction: Math.max(...transactions.map((t) => t.timestamp)),
+      });
+    });
+
+    // Sort by total volume descending
+    tradingPartners.sort((a, b) => b.totalVolume - a.totalVolume);
+
+    return {
+      totalBazaarProfit: totalProfit,
+      totalBazaarVolume: totalVolume,
+      totalTransactions: bazaarTransactions.length,
+      mostProfitableItem: itemAnalytics[0]?.itemName || 'N/A',
+      bestTradingPartner: tradingPartners[0]?.partnerName || 'N/A',
+      itemAnalytics,
+      tradingPartners,
+      bazaarTransactions,
+    };
+  }
+
   private isNeutralTransaction(log: LogEntry): boolean {
     const title = log.details.title.toLowerCase();
 
@@ -795,9 +1369,11 @@ class ProfitLoggerUI {
   private resultsSummary: HTMLElement;
   private profitOverview: HTMLElement;
   private transactionDetails: HTMLElement;
+  private bazaarAnalytics: HTMLElement;
   private errorSection: HTMLElement;
   private errorMessage: HTMLElement;
   private retryBtn: HTMLButtonElement;
+  private dailyProfits: DailyProfit[] = [];
 
   constructor() {
     this.profitLogger = new ProfitLogger();
@@ -831,6 +1407,9 @@ class ProfitLoggerUI {
     this.transactionDetails = document.getElementById(
       'transactionDetails'
     ) as HTMLElement;
+    this.bazaarAnalytics = document.getElementById(
+      'bazaarAnalytics'
+    ) as HTMLElement;
     this.errorSection = document.getElementById('errorSection') as HTMLElement;
     this.errorMessage = document.getElementById('errorMessage') as HTMLElement;
     this.retryBtn = document.getElementById('retryBtn') as HTMLButtonElement;
@@ -849,6 +1428,9 @@ class ProfitLoggerUI {
 
       const days = parseInt(this.daysInput.value) || 7;
       const results = await this.profitLogger.analyzeProfitForDays(days);
+
+      // Store results for sorting functionality
+      this.dailyProfits = results;
 
       this.hideProgress();
       this.displayResults(results);
@@ -994,6 +1576,427 @@ class ProfitLoggerUI {
           .join('')}
       </div>
     `;
+
+    // Display bazaar analytics
+    this.displayBazaarAnalytics(dailyProfits);
+  }
+
+  private displayBazaarAnalytics(dailyProfits: DailyProfit[]) {
+    // Combine all bazaar analytics across all days
+    const allItemAnalytics = new Map<string, ItemAnalytics>();
+    const allPartnerAnalytics = new Map<string, TradingPartnerAnalytics>();
+    let totalBazaarProfit = 0;
+    let totalBazaarVolume = 0;
+    let totalBazaarTransactions = 0;
+
+    dailyProfits.forEach((day) => {
+      if (day.bazaarAnalytics) {
+        totalBazaarProfit += day.bazaarAnalytics.totalBazaarProfit;
+        totalBazaarVolume += day.bazaarAnalytics.totalBazaarVolume;
+        totalBazaarTransactions += day.bazaarAnalytics.totalTransactions;
+
+        // Merge item analytics
+        day.bazaarAnalytics.itemAnalytics.forEach((item) => {
+          if (allItemAnalytics.has(item.itemName)) {
+            const existing = allItemAnalytics.get(item.itemName)!;
+            existing.totalBought += item.totalBought;
+            existing.totalSold += item.totalSold;
+            existing.totalQuantityBought += item.totalQuantityBought;
+            existing.totalQuantitySold += item.totalQuantitySold;
+            existing.netProfit += item.netProfit;
+            existing.transactionCount += item.transactionCount;
+            existing.lastActivity = Math.max(
+              existing.lastActivity,
+              item.lastActivity
+            );
+
+            // Recalculate averages
+            existing.avgBuyPrice =
+              existing.totalQuantityBought > 0
+                ? existing.totalBought / existing.totalQuantityBought
+                : 0;
+            existing.avgSellPrice =
+              existing.totalQuantitySold > 0
+                ? existing.totalSold / existing.totalQuantitySold
+                : 0;
+            existing.profitMargin =
+              existing.avgBuyPrice > 0
+                ? ((existing.avgSellPrice - existing.avgBuyPrice) /
+                    existing.avgBuyPrice) *
+                  100
+                : 0;
+          } else {
+            allItemAnalytics.set(item.itemName, { ...item });
+          }
+        });
+
+        // Merge partner analytics
+        day.bazaarAnalytics.tradingPartners.forEach((partner) => {
+          if (allPartnerAnalytics.has(partner.partnerName)) {
+            const existing = allPartnerAnalytics.get(partner.partnerName)!;
+            existing.totalTransactions += partner.totalTransactions;
+            existing.totalVolume += partner.totalVolume;
+            existing.lastTransaction = Math.max(
+              existing.lastTransaction,
+              partner.lastTransaction
+            );
+          } else {
+            allPartnerAnalytics.set(partner.partnerName, { ...partner });
+          }
+        });
+      }
+    });
+
+    const itemAnalytics = Array.from(allItemAnalytics.values()).sort(
+      (a, b) => b.netProfit - a.netProfit
+    );
+    const partnerAnalytics = Array.from(allPartnerAnalytics.values()).sort(
+      (a, b) => b.totalVolume - a.totalVolume
+    );
+
+    if (totalBazaarTransactions === 0) {
+      this.bazaarAnalytics.innerHTML = `
+        <div class="no-data">
+          <p>No bazaar transactions found in the selected time period.</p>
+          <p>Bazaar transactions include buying and selling items from/to other players.</p>
+        </div>
+      `;
+      return;
+    }
+
+    this.bazaarAnalytics.innerHTML = `
+      <!-- Summary Cards -->
+      <div class="bazaar-summary">
+        <div class="bazaar-summary-card profit">
+          <div class="bazaar-summary-label">Total Bazaar Profit</div>
+          <div class="bazaar-summary-value ${
+            totalBazaarProfit >= 0 ? 'profit-positive' : 'profit-negative'
+          }">
+            $${totalBazaarProfit.toLocaleString()}
+          </div>
+        </div>
+        <div class="bazaar-summary-card volume">
+          <div class="bazaar-summary-label">Total Volume</div>
+          <div class="bazaar-summary-value">$${totalBazaarVolume.toLocaleString()}</div>
+        </div>
+        <div class="bazaar-summary-card transactions">
+          <div class="bazaar-summary-label">Total Transactions</div>
+          <div class="bazaar-summary-value">${totalBazaarTransactions}</div>
+        </div>
+        <div class="bazaar-summary-card">
+          <div class="bazaar-summary-label">Avg Profit/Transaction</div>
+          <div class="bazaar-summary-value">
+            $${Math.round(
+              totalBazaarProfit / totalBazaarTransactions
+            ).toLocaleString()}
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="bazaar-tabs">
+        <button class="bazaar-tab active" data-tab="items">Items</button>
+        <button class="bazaar-tab" data-tab="partners">Trading Partners</button>
+      </div>
+
+      <!-- Items Tab Content -->
+      <div class="bazaar-content active" id="items-content">
+        ${
+          itemAnalytics.length > 0
+            ? `
+          <table class="items-table" id="bazaarItemsTable">
+            <thead>
+              <tr>
+                <th data-sort="itemName" class="sortable">
+                  Item
+                  <span class="sort-indicator"></span>
+                </th>
+                <th data-sort="netProfit" class="sortable">
+                  Net Profit
+                  <span class="sort-indicator"></span>
+                </th>
+                <th data-sort="profitMargin" class="sortable">
+                  Profit Margin
+                  <span class="sort-indicator"></span>
+                </th>
+                <th data-sort="totalQuantityBought" class="sortable">
+                  Bought
+                  <span class="sort-indicator"></span>
+                </th>
+                <th data-sort="totalQuantitySold" class="sortable">
+                  Sold
+                  <span class="sort-indicator"></span>
+                </th>
+                <th data-sort="avgBuyPrice" class="sortable">
+                  Avg Buy Price
+                  <span class="sort-indicator"></span>
+                </th>
+                <th data-sort="avgSellPrice" class="sortable">
+                  Avg Sell Price
+                  <span class="sort-indicator"></span>
+                </th>
+                <th data-sort="transactionCount" class="sortable">
+                  Transactions
+                  <span class="sort-indicator"></span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemAnalytics
+                .map(
+                  (item) => `
+                <tr>
+                  <td><strong>${item.itemName}</strong></td>
+                  <td class="number ${
+                    item.netProfit >= 0 ? 'profit-positive' : 'profit-negative'
+                  }">
+                    $${item.netProfit.toLocaleString()}
+                  </td>
+                  <td class="number ${this.getMarginClass(item.profitMargin)}">
+                    ${item.profitMargin.toFixed(1)}%
+                  </td>
+                  <td class="number">${item.totalQuantityBought}</td>
+                  <td class="number">${item.totalQuantitySold}</td>
+                  <td class="number">$${item.avgBuyPrice.toLocaleString()}</td>
+                  <td class="number">$${item.avgSellPrice.toLocaleString()}</td>
+                  <td class="number">${item.transactionCount}</td>
+                </tr>
+              `
+                )
+                .join('')}
+            </tbody>
+          </table>
+        `
+            : '<div class="no-data">No item data available</div>'
+        }
+      </div>
+
+      <!-- Partners Tab Content -->
+      <div class="bazaar-content" id="partners-content">
+        ${
+          partnerAnalytics.length > 0
+            ? `
+          <table class="partners-table" id="bazaarPartnersTable">
+            <thead>
+              <tr>
+                <th data-sort="partnerName" class="sortable">
+                  Trading Partner
+                  <span class="sort-indicator"></span>
+                </th>
+                <th data-sort="totalVolume" class="sortable">
+                  Total Volume
+                  <span class="sort-indicator"></span>
+                </th>
+                <th data-sort="totalTransactions" class="sortable">
+                  Transactions
+                  <span class="sort-indicator"></span>
+                </th>
+                <th data-sort="mostTradedItem" class="sortable">
+                  Most Traded Item
+                  <span class="sort-indicator"></span>
+                </th>
+                <th data-sort="lastTransaction" class="sortable">
+                  Last Transaction
+                  <span class="sort-indicator"></span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              ${partnerAnalytics
+                .map(
+                  (partner) => `
+                <tr>
+                  <td><strong>${partner.partnerName}</strong></td>
+                  <td class="number">$${partner.totalVolume.toLocaleString()}</td>
+                  <td class="number">${partner.totalTransactions}</td>
+                  <td>${partner.mostTradedItem}</td>
+                  <td>${new Date(
+                    partner.lastTransaction * 1000
+                  ).toLocaleDateString()}</td>
+                </tr>
+              `
+                )
+                .join('')}
+            </tbody>
+          </table>
+        `
+            : '<div class="no-data">No trading partner data available</div>'
+        }
+      </div>
+    `;
+
+    // Add tab switching functionality
+    this.setupBazaarTabs();
+    this.setupBazaarSorting();
+  }
+
+  private getMarginClass(margin: number): string {
+    if (margin >= 20) return 'margin-high';
+    if (margin >= 5) return 'margin-medium';
+    return 'margin-low';
+  }
+
+  private setupBazaarTabs() {
+    const tabs = document.querySelectorAll('.bazaar-tab');
+    const contents = document.querySelectorAll('.bazaar-content');
+
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const targetTab = tab.getAttribute('data-tab');
+
+        // Remove active from all tabs and contents
+        tabs.forEach((t) => t.classList.remove('active'));
+        contents.forEach((c) => c.classList.remove('active'));
+
+        // Add active to clicked tab and corresponding content
+        tab.classList.add('active');
+        document
+          .getElementById(`${targetTab}-content`)
+          ?.classList.add('active');
+      });
+    });
+  }
+
+  private setupBazaarSorting() {
+    // Setup sorting for items table
+    this.setupTableSorting('bazaarItemsTable', 'items');
+    // Setup sorting for partners table
+    this.setupTableSorting('bazaarPartnersTable', 'partners');
+  }
+
+  private setupTableSorting(tableId: string, dataType: 'items' | 'partners') {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+
+    const sortableHeaders = table.querySelectorAll('th.sortable');
+    let currentSort = { column: '', direction: 'desc' };
+
+    sortableHeaders.forEach((header) => {
+      header.addEventListener('click', () => {
+        const sortColumn = header.getAttribute('data-sort');
+        if (!sortColumn) return;
+
+        // Toggle direction if same column, otherwise use desc for new column
+        if (currentSort.column === sortColumn) {
+          currentSort.direction =
+            currentSort.direction === 'desc' ? 'asc' : 'desc';
+        } else {
+          currentSort.column = sortColumn;
+          currentSort.direction = 'desc';
+        }
+
+        // Update sort indicators
+        this.updateBazaarSortIndicators(table, currentSort);
+
+        // Sort and re-render the table
+        this.sortAndRenderBazaarTable(tableId, dataType, currentSort);
+      });
+    });
+  }
+
+  private updateBazaarSortIndicators(
+    table: Element,
+    currentSort: { column: string; direction: string }
+  ) {
+    // Remove all active states
+    table.querySelectorAll('th.sortable').forEach((header) => {
+      header.classList.remove('active', 'asc', 'desc');
+    });
+
+    // Add active state to current sort column
+    const activeHeader = table.querySelector(
+      `th[data-sort="${currentSort.column}"]`
+    );
+    if (activeHeader) {
+      activeHeader.classList.add('active', currentSort.direction);
+    }
+  }
+
+  private sortAndRenderBazaarTable(
+    tableId: string,
+    dataType: 'items' | 'partners',
+    currentSort: { column: string; direction: string }
+  ) {
+    // Get the latest daily profits to re-sort
+    const latestDailyProfits = this.dailyProfits;
+    if (!latestDailyProfits.length) return;
+
+    // Get bazaar analytics from the latest day
+    const latestDay = latestDailyProfits[latestDailyProfits.length - 1];
+    if (!latestDay.bazaarAnalytics) return;
+
+    let sortedData: any[];
+
+    if (dataType === 'items') {
+      sortedData = [...latestDay.bazaarAnalytics.itemAnalytics];
+    } else {
+      sortedData = [...latestDay.bazaarAnalytics.tradingPartners];
+    }
+
+    // Sort the data
+    sortedData.sort((a, b) => {
+      const aVal = a[currentSort.column];
+      const bVal = b[currentSort.column];
+
+      if (aVal === null && bVal === null) return 0;
+      if (aVal === null) return 1;
+      if (bVal === null) return -1;
+
+      let comparison = 0;
+
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        comparison = aVal.localeCompare(bVal);
+      } else if (typeof aVal === 'number' && typeof bVal === 'number') {
+        comparison = aVal - bVal;
+      }
+
+      return currentSort.direction === 'asc' ? comparison : -comparison;
+    });
+
+    // Re-render the table body with sorted data
+    const tableBody = document.querySelector(`#${tableId} tbody`);
+    if (!tableBody) return;
+
+    if (dataType === 'items') {
+      tableBody.innerHTML = sortedData
+        .map(
+          (item) => `
+        <tr>
+          <td><strong>${item.itemName}</strong></td>
+          <td class="number ${
+            item.netProfit >= 0 ? 'profit-positive' : 'profit-negative'
+          }">
+            $${item.netProfit.toLocaleString()}
+          </td>
+          <td class="number ${this.getMarginClass(item.profitMargin)}">
+            ${item.profitMargin.toFixed(1)}%
+          </td>
+          <td class="number">${item.totalQuantityBought}</td>
+          <td class="number">${item.totalQuantitySold}</td>
+          <td class="number">$${item.avgBuyPrice.toLocaleString()}</td>
+          <td class="number">$${item.avgSellPrice.toLocaleString()}</td>
+          <td class="number">${item.transactionCount}</td>
+        </tr>
+      `
+        )
+        .join('');
+    } else {
+      tableBody.innerHTML = sortedData
+        .map(
+          (partner) => `
+        <tr>
+          <td><strong>${partner.partnerName}</strong></td>
+          <td class="number">$${partner.totalVolume.toLocaleString()}</td>
+          <td class="number">${partner.totalTransactions}</td>
+          <td>${partner.mostTradedItem}</td>
+          <td>${new Date(
+            partner.lastTransaction * 1000
+          ).toLocaleDateString()}</td>
+        </tr>
+      `
+        )
+        .join('');
+    }
   }
 }
 

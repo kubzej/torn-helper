@@ -349,3 +349,224 @@
     background: rgba(239, 68, 68, 0.15);
   }
 }
+
+/* Bazaar Analytics Styles */
+.bazaar-analytics {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.bazaar-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+
+.bazaar-summary-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  text-align: center;
+}
+
+.bazaar-summary-card.profit {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.bazaar-summary-card.volume {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.bazaar-summary-card.transactions {
+  background: rgba(168, 85, 247, 0.1);
+  border-color: rgba(168, 85, 247, 0.3);
+}
+
+.bazaar-summary-label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-xs);
+}
+
+.bazaar-summary-value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.bazaar-tabs {
+  display: flex;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-md);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.bazaar-tab {
+  padding: var(--space-sm) var(--space-md);
+  background: none;
+  border: none;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 500;
+}
+
+.bazaar-tab.active {
+  background: var(--bg-primary);
+  color: var(--color-primary);
+  border-bottom: 2px solid var(--color-primary);
+}
+
+.bazaar-tab:hover:not(.active) {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.bazaar-content {
+  display: none;
+}
+
+.bazaar-content.active {
+  display: block;
+}
+
+.items-table,
+.partners-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: var(--space-md);
+}
+
+.items-table th,
+.items-table td,
+.partners-table th,
+.partners-table td {
+  padding: var(--space-sm);
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.items-table th,
+.partners-table th {
+  background: var(--bg-secondary);
+  font-weight: 600;
+  color: var(--text-primary);
+  position: sticky;
+  top: 0;
+}
+
+.items-table td.number,
+.partners-table td.number {
+  text-align: right;
+  font-family: monospace;
+}
+
+.profit-positive {
+  color: var(--color-success);
+}
+
+.profit-negative {
+  color: var(--color-danger);
+}
+
+.margin-high {
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+.margin-medium {
+  color: var(--color-warning);
+  font-weight: 500;
+}
+
+.margin-low {
+  color: var(--color-danger);
+}
+
+.no-data {
+  text-align: center;
+  color: var(--text-secondary);
+  padding: var(--space-xl);
+  font-style: italic;
+}
+
+@media (max-width: 768px) {
+  .bazaar-summary {
+    grid-template-columns: 1fr;
+  }
+  
+  .items-table,
+  .partners-table {
+    font-size: 0.875rem;
+  }
+  
+  .items-table th,
+  .items-table td,
+  .partners-table th,
+  .partners-table td {
+    padding: var(--space-xs);
+  }
+  
+  .bazaar-tabs {
+    flex-wrap: wrap;
+  }
+}
+
+/* Sorting Styles */
+.items-table th.sortable,
+.partners-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  transition: background-color 0.2s ease;
+}
+
+.items-table th.sortable:hover,
+.partners-table th.sortable:hover {
+  background: var(--bg-tertiary);
+}
+
+.items-table th.sortable.active,
+.partners-table th.sortable.active {
+  background: var(--color-primary);
+  color: white;
+}
+
+.sort-indicator {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0.3;
+  transition: opacity 0.2s ease;
+}
+
+.items-table th.sortable:hover .sort-indicator,
+.partners-table th.sortable:hover .sort-indicator {
+  opacity: 0.6;
+}
+
+.items-table th.sortable.active .sort-indicator,
+.partners-table th.sortable.active .sort-indicator {
+  opacity: 1;
+}
+
+.sort-indicator::after {
+  content: '⇅';
+}
+
+.items-table th.sortable.asc .sort-indicator::after,
+.partners-table th.sortable.asc .sort-indicator::after {
+  content: '↑';
+}
+
+.items-table th.sortable.desc .sort-indicator::after,
+.partners-table th.sortable.desc .sort-indicator::after {
+  content: '↓';
+}
