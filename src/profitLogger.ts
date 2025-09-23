@@ -1441,7 +1441,6 @@ class ProfitLoggerUI {
   // Status indicator elements
   private statusActionsSection: HTMLElement;
   private statusIndicator: HTMLElement;
-  private statusIcon: HTMLElement;
   private statusTitle: HTMLElement;
 
   // Copy logs elements
@@ -1498,7 +1497,6 @@ class ProfitLoggerUI {
     this.statusIndicator = document.getElementById(
       'statusIndicator'
     ) as HTMLElement;
-    this.statusIcon = document.getElementById('statusIcon') as HTMLElement;
     this.statusTitle = document.getElementById('statusTitle') as HTMLElement;
 
     // Copy logs button
