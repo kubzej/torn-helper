@@ -164,6 +164,15 @@ class ProfitLogger {
   private progressCallback: ((progress: number, text: string) => void) | null =
     null;
   private itemMapping: { [key: number]: string } = {}; // Cache for item ID -> name mapping
+  private unknownItemIds: Set<number> = new Set(); // Track unresolved item IDs
+
+  // Issue tracking for status indicator
+  private analysisIssues = {
+    unknownTransactions: 0,
+    missingAmountExtractions: 0,
+    incorrectClassifications: 0,
+    unresolvedItemIds: 0,
+  };
 
   constructor() {
     this.initializeAPI();
@@ -263,7 +272,12 @@ class ProfitLogger {
    * Get item name from ID using cached mapping
    */
   private getItemName(itemId: number): string {
-    return this.itemMapping[itemId] || `Item #${itemId}`;
+    const itemName = this.itemMapping[itemId];
+    if (!itemName) {
+      this.unknownItemIds.add(itemId);
+      return `Item #${itemId}`;
+    }
+    return itemName;
   }
 
   /**
@@ -363,6 +377,17 @@ class ProfitLogger {
 
     // Load item mapping first for better bazaar analytics
     await this.loadItemMapping();
+
+    // Clear unknown item IDs from previous analysis
+    this.unknownItemIds.clear();
+
+    // Reset issue tracking
+    this.analysisIssues = {
+      unknownTransactions: 0,
+      missingAmountExtractions: 0,
+      incorrectClassifications: 0,
+      unresolvedItemIds: 0,
+    };
 
     const now = Math.floor(Date.now() / 1000);
     const fromTimestamp = now - days * 24 * 60 * 60;
@@ -825,6 +850,22 @@ class ProfitLogger {
         });
       });
 
+    // Track analysis issues for status indicator
+    this.analysisIssues.unknownTransactions = unknownTransactions.length;
+
+    // Count missing amount extractions and incorrect classifications
+    unknownTransactions.forEach((item) => {
+      if (item.extractedAmount === 0) {
+        this.analysisIssues.missingAmountExtractions++;
+      }
+      if (
+        item.classification === 'heuristic_based' ||
+        item.classification === 'unknown'
+      ) {
+        this.analysisIssues.incorrectClassifications++;
+      }
+    });
+
     console.log('\n⚠️  UNKNOWN/UNCLEAR TRANSACTIONS:');
     console.log(
       `Found ${unknownTransactions.length} transactions needing analysis:`
@@ -892,6 +933,18 @@ class ProfitLogger {
     );
     console.log('2. Missing amount extraction patterns');
     console.log('3. Incorrect income/expense classifications');
+    console.log("4. Which item IDs couldn't be resolved");
+
+    // Log unknown item IDs if any were found
+    if (this.unknownItemIds.size > 0) {
+      console.log('\n🔍 UNKNOWN ITEM IDs:');
+      console.log(`Found ${this.unknownItemIds.size} unresolved item IDs:`);
+      console.log(
+        "Item IDs that couldn't be resolved:",
+        Array.from(this.unknownItemIds).sort((a, b) => a - b)
+      );
+    }
+
     console.log('=====================================\n');
 
     return result.reverse(); // Show oldest first
@@ -1355,6 +1408,16 @@ class ProfitLogger {
     }
     return this.api.request<T>(endpoint);
   }
+
+  /**
+   * Get current analysis issues for status indicator
+   */
+  getAnalysisIssues() {
+    return {
+      ...this.analysisIssues,
+      unresolvedItemIds: this.unknownItemIds.size,
+    };
+  }
 }
 
 // UI Management
@@ -1375,8 +1438,22 @@ class ProfitLoggerUI {
   private retryBtn: HTMLButtonElement;
   private dailyProfits: DailyProfit[] = [];
 
+  // Status indicator elements
+  private statusActionsSection: HTMLElement;
+  private statusIndicator: HTMLElement;
+  private statusIcon: HTMLElement;
+  private statusTitle: HTMLElement;
+
+  // Copy logs elements
+  private copyLogsBtn: HTMLButtonElement;
+
+  // Console log capture
+  private consoleLogs: string[] = [];
+  private originalConsoleLog: typeof console.log;
+
   constructor() {
     this.profitLogger = new ProfitLogger();
+    this.setupConsoleCapture();
     this.initializeElements();
     this.bindEvents();
 
@@ -1413,17 +1490,37 @@ class ProfitLoggerUI {
     this.errorSection = document.getElementById('errorSection') as HTMLElement;
     this.errorMessage = document.getElementById('errorMessage') as HTMLElement;
     this.retryBtn = document.getElementById('retryBtn') as HTMLButtonElement;
+
+    // Status indicator elements
+    this.statusActionsSection = document.getElementById(
+      'statusActionsSection'
+    ) as HTMLElement;
+    this.statusIndicator = document.getElementById(
+      'statusIndicator'
+    ) as HTMLElement;
+    this.statusIcon = document.getElementById('statusIcon') as HTMLElement;
+    this.statusTitle = document.getElementById('statusTitle') as HTMLElement;
+
+    // Copy logs button
+    this.copyLogsBtn = document.getElementById(
+      'copyLogsBtn'
+    ) as HTMLButtonElement;
   }
 
   private bindEvents() {
     this.analyzeBtn.addEventListener('click', () => this.startAnalysis());
     this.retryBtn.addEventListener('click', () => this.startAnalysis());
+    this.copyLogsBtn.addEventListener('click', () =>
+      this.copyLogsToClipboard()
+    );
   }
 
   private async startAnalysis() {
     try {
       this.hideError();
       this.hideResults();
+      this.hideStatusIndicator();
+      this.clearConsoleLogs(); // Clear previous logs
       this.showProgress();
 
       const days = parseInt(this.daysInput.value) || 7;
@@ -1434,6 +1531,7 @@ class ProfitLoggerUI {
 
       this.hideProgress();
       this.displayResults(results);
+      this.updateStatusIndicator();
       this.showResults();
     } catch (error) {
       this.hideProgress();
@@ -1473,6 +1571,130 @@ class ProfitLoggerUI {
 
   private hideError() {
     this.errorSection.classList.add('hidden');
+  }
+
+  private hideStatusIndicator() {
+    this.statusActionsSection.classList.add('hidden');
+  }
+
+  private updateStatusIndicator() {
+    const issues = this.profitLogger.getAnalysisIssues();
+    const hasIssues =
+      issues.unknownTransactions > 0 ||
+      issues.missingAmountExtractions > 0 ||
+      issues.incorrectClassifications > 0 ||
+      issues.unresolvedItemIds > 0;
+
+    // Show the status actions section
+    this.statusActionsSection.classList.remove('hidden');
+
+    if (hasIssues) {
+      // Show warning status
+      this.statusIndicator.classList.remove('status-ok');
+      this.statusIndicator.classList.add('status-warning');
+      this.statusTitle.textContent = 'Issues Found';
+    } else {
+      // Show success status
+      this.statusIndicator.classList.remove('status-warning');
+      this.statusIndicator.classList.add('status-ok');
+      this.statusTitle.textContent = 'All Good';
+    }
+  }
+
+  /**
+   * Setup console capture to save all console.log output
+   */
+  private setupConsoleCapture() {
+    this.originalConsoleLog = console.log;
+    this.consoleLogs = [];
+
+    console.log = (...args: any[]) => {
+      // Call original console.log
+      this.originalConsoleLog.apply(console, args);
+
+      // Capture the log message
+      const timestamp = new Date().toLocaleTimeString();
+      const message = args
+        .map((arg) => {
+          if (typeof arg === 'object') {
+            try {
+              return JSON.stringify(arg, null, 2);
+            } catch (e) {
+              return String(arg);
+            }
+          }
+          return String(arg);
+        })
+        .join(' ');
+
+      this.consoleLogs.push(`[${timestamp}] ${message}`);
+    };
+  }
+
+  /**
+   * Copy all console logs to clipboard
+   */
+  private async copyLogsToClipboard() {
+    try {
+      if (this.consoleLogs.length === 0) {
+        // Show temporary message if no logs
+        const originalText = this.copyLogsBtn.textContent;
+        this.copyLogsBtn.textContent = 'No logs to copy';
+        this.copyLogsBtn.disabled = true;
+
+        setTimeout(() => {
+          this.copyLogsBtn.textContent = originalText;
+          this.copyLogsBtn.disabled = false;
+        }, 2000);
+        return;
+      }
+
+      // Prepare the log content
+      const logContent = [
+        '=== TORN HELPER - PROFIT ANALYSIS LOGS ===',
+        `Generated: ${new Date().toLocaleString()}`,
+        `Total logs: ${this.consoleLogs.length}`,
+        '',
+        '=== CONSOLE LOGS ===',
+        ...this.consoleLogs,
+        '',
+        '=== END OF LOGS ===',
+      ].join('\n');
+
+      // Copy to clipboard
+      await navigator.clipboard.writeText(logContent);
+
+      // Show success feedback
+      const originalText = this.copyLogsBtn.textContent;
+      const originalClass = this.copyLogsBtn.className;
+
+      this.copyLogsBtn.textContent = 'Copied!';
+      this.copyLogsBtn.classList.add('copied');
+
+      setTimeout(() => {
+        this.copyLogsBtn.textContent = originalText;
+        this.copyLogsBtn.className = originalClass;
+      }, 2000);
+    } catch (error) {
+      console.error('Failed to copy logs to clipboard:', error);
+
+      // Show error feedback
+      const originalText = this.copyLogsBtn.textContent;
+      this.copyLogsBtn.textContent = 'Copy failed';
+      this.copyLogsBtn.disabled = true;
+
+      setTimeout(() => {
+        this.copyLogsBtn.textContent = originalText;
+        this.copyLogsBtn.disabled = false;
+      }, 2000);
+    }
+  }
+
+  /**
+   * Clear captured console logs
+   */
+  private clearConsoleLogs() {
+    this.consoleLogs = [];
   }
 
   private displayResults(dailyProfits: DailyProfit[]) {
