@@ -643,7 +643,17 @@ class ProfitLogger {
       const title = log.details.title.toLowerCase();
       const category = log.details.category.toLowerCase();
 
-      if (amount === 0) {
+      // Handle specific cases first before general amount checks
+      if (title.includes('spin the wheel start')) {
+        // Check if it's a free spin (cost = 0) or paid spin
+        const cost = log.data?.cost || 0;
+        classification =
+          cost === 0 ? 'casino_free_wheel_spin' : 'casino_paid_wheel_spin';
+      } else if (title.includes('blackjack win')) {
+        classification = 'casino_blackjack_win';
+      } else if (title.includes('blackjack push')) {
+        classification = 'casino_blackjack_push';
+      } else if (amount === 0) {
         classification = 'no_amount_found';
       } else if (log.params.color === 'green') {
         classification = 'green_color_income';
@@ -668,8 +678,6 @@ class ProfitLogger {
         (title.includes('start') || title.includes('join'))
       ) {
         classification = 'casino_game_start';
-      } else if (title.includes('spin the wheel start')) {
-        classification = 'casino_wheel_spin';
       } else if (title.includes('bookie bet')) {
         classification = 'bookie_betting';
       } else if (title.includes('upkeep') || title.includes('donate')) {
@@ -699,8 +707,12 @@ class ProfitLogger {
       });
 
       // Track transactions with no amount or unclear classification
+      // Exclude legitimate free transactions (like free wheel spins)
+      const isLegitimateFreeSpin =
+        classification === 'casino_free_wheel_spin' && amount === 0;
+
       if (
-        amount === 0 ||
+        (amount === 0 && !isLegitimateFreeSpin) ||
         classification === 'unknown' ||
         classification === 'heuristic_based'
       ) {
@@ -965,8 +977,9 @@ class ProfitLogger {
     if (data.bet_amount && data.bet_amount > 0) return data.bet_amount;
     if (data.bet && data.bet > 0) return data.bet;
     if (data.withdrawn && data.withdrawn > 0) return data.withdrawn;
+    if (data.winnings && data.winnings > 0) return data.winnings; // Casino blackjack winnings
     if (data.cost && data.cost > 0) return data.cost; // Casino lottery bet, wheel spin cost
-    if (data.money && data.money > 0) return data.money; // General money field
+    if (data.money && data.money > 0) return data.money; // General money field (blackjack push, etc.)
     if (data.won_amount && data.won_amount > 0) return data.won_amount; // Casino winnings
     if (data.pot && data.pot > 0) return data.pot; // Casino pot winnings
 
