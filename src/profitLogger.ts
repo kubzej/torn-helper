@@ -405,11 +405,14 @@ class ProfitLogger {
       ).toISOString()} to ${new Date(now * 1000).toISOString()}`
     );
 
-    const [moneyLogs, outgoingLogs, incomingLogs] = await Promise.all([
-      this.fetchLogs(13, fromTimestamp, now),
-      this.fetchLogs(14, fromTimestamp, now),
-      this.fetchLogs(17, fromTimestamp, now),
-    ]);
+    const [moneyLogs, outgoingLogs, incomingLogs, shopLogs, tradeLogs] =
+      await Promise.all([
+        this.fetchLogs(13, fromTimestamp, now),
+        this.fetchLogs(14, fromTimestamp, now),
+        this.fetchLogs(17, fromTimestamp, now),
+        this.fetchLogs(4, fromTimestamp, now), // Shops category
+        this.fetchLogs(8, fromTimestamp, now), // Trades category
+      ]);
 
     console.log(`📊 FETCH RESULTS:`);
     console.log(
@@ -421,6 +424,8 @@ class ProfitLogger {
     console.log(
       `- Category 17 (Money incoming): ${incomingLogs.length} transactions`
     );
+    console.log(`- Category 4 (Shops): ${shopLogs.length} transactions`);
+    console.log(`- Category 8 (Trades): ${tradeLogs.length} transactions`);
 
     // Show sample transactions from each category
     console.log(`\n📋 SAMPLE TRANSACTIONS BY CATEGORY:`);
@@ -467,10 +472,44 @@ class ProfitLogger {
       });
     }
 
+    if (shopLogs.length > 0) {
+      console.log(`\n🔸 Category 4 (Shops) samples:`);
+      shopLogs.slice(0, 5).forEach((log, i) => {
+        const amount = this.extractAmount ? this.extractAmount(log) : 0;
+        console.log(
+          `  ${i + 1}. ID: ${log.id}, Title: "${
+            log.details.title
+          }", Amount: $${amount.toLocaleString()}, Color: ${
+            log.params.color || 'none'
+          }`
+        );
+      });
+    }
+
+    if (tradeLogs.length > 0) {
+      console.log(`\n🔸 Category 8 (Trades) samples:`);
+      tradeLogs.slice(0, 5).forEach((log, i) => {
+        const amount = this.extractAmount ? this.extractAmount(log) : 0;
+        console.log(
+          `  ${i + 1}. ID: ${log.id}, Title: "${
+            log.details.title
+          }", Amount: $${amount.toLocaleString()}, Color: ${
+            log.params.color || 'none'
+          }`
+        );
+      });
+    }
+
     this.updateProgress(80, 'Processing transactions...');
 
     // Combine all logs
-    const allLogs = [...moneyLogs, ...outgoingLogs, ...incomingLogs];
+    const allLogs = [
+      ...moneyLogs,
+      ...outgoingLogs,
+      ...incomingLogs,
+      ...shopLogs,
+      ...tradeLogs,
+    ];
 
     console.log(`📈 TOTAL COMBINED: ${allLogs.length} transactions`);
 
@@ -644,7 +683,10 @@ class ProfitLogger {
       const category = log.details.category.toLowerCase();
 
       // Handle specific cases first before general amount checks
-      if (title.includes('spin the wheel start')) {
+      if (
+        title.includes('spin the wheel start') ||
+        title.includes('casino spin the wheel start')
+      ) {
         // Check if it's a free spin (cost = 0) or paid spin
         const cost = log.data?.cost || 0;
         classification =
@@ -653,6 +695,14 @@ class ProfitLogger {
         classification = 'casino_blackjack_win';
       } else if (title.includes('blackjack push')) {
         classification = 'casino_blackjack_push';
+      } else if (
+        title.includes('crime success') &&
+        title.includes('bootlegging') &&
+        title.includes('money paid')
+      ) {
+        classification = 'crime_bootlegging_expense';
+      } else if (title.includes('racing upgrade car')) {
+        classification = 'racing_car_upgrade_expense';
       } else if (amount === 0) {
         classification = 'no_amount_found';
       } else if (log.params.color === 'green') {
@@ -707,12 +757,14 @@ class ProfitLogger {
       });
 
       // Track transactions with no amount or unclear classification
-      // Exclude legitimate free transactions (like free wheel spins)
+      // Exclude legitimate free transactions (like free wheel spins and racing upgrades)
       const isLegitimateFreeSpin =
         classification === 'casino_free_wheel_spin' && amount === 0;
+      const isLegitimateRacingUpgrade =
+        classification === 'racing_car_upgrade_expense' && amount === 0;
 
       if (
-        (amount === 0 && !isLegitimateFreeSpin) ||
+        (amount === 0 && !isLegitimateFreeSpin && !isLegitimateRacingUpgrade) ||
         classification === 'unknown' ||
         classification === 'heuristic_based'
       ) {
@@ -972,6 +1024,7 @@ class ProfitLogger {
     if (data.cost_total && data.cost_total > 0) return data.cost_total;
     if (data.money_gained && data.money_gained > 0) return data.money_gained;
     if (data.money_mugged && data.money_mugged > 0) return data.money_mugged;
+    if (data.money_lost && data.money_lost > 0) return data.money_lost;
 
     // Casino and gambling fields - only check if > 0
     if (data.bet_amount && data.bet_amount > 0) return data.bet_amount;
@@ -1019,6 +1072,13 @@ class ProfitLogger {
     // Expenses (things you spend money on) - check these FIRST
     if (title.includes('buy') || title.includes('purchase')) return false;
     if (title.includes('ammo buy')) return false; // Ammo purchases (even if green)
+    if (
+      title.includes('crime success') &&
+      title.includes('bootlegging') &&
+      title.includes('money paid')
+    )
+      return false; // Crime expenses
+    if (title.includes('racing upgrade car')) return false; // Racing car upgrades cost racing points
     if (title.includes('bet') || title.includes('lottery bet')) return false;
     if (title.includes('casino') && title.includes('join')) return false;
     if (title.includes('casino') && title.includes('start')) return false;
